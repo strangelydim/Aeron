@@ -60,7 +60,7 @@ public class LogModel extends Observable
 
             defaultFrameHeaders = defaultFrameHeaders(logMetaDataBuffer);
 
-              setChanged();
+            setChanged();
             notifyObservers();
         }
         catch (Exception e)

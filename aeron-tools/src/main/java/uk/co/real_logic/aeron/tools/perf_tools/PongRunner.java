@@ -1,4 +1,4 @@
-package uk.co.real_logic.aeron.tools;
+package uk.co.real_logic.aeron.tools.perf_tools;
 
 public class PongRunner
 {

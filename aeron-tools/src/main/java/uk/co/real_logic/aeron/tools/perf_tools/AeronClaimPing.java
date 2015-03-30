@@ -1,4 +1,4 @@
-package uk.co.real_logic.aeron.tools;
+package uk.co.real_logic.aeron.tools.perf_tools;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;

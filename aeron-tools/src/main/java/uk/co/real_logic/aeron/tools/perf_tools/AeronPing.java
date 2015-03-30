@@ -1,4 +1,4 @@
-package uk.co.real_logic.aeron.tools;
+package uk.co.real_logic.aeron.tools.perf_tools;
 
 import java.nio.ByteBuffer;
 import java.util.concurrent.CountDownLatch;
@@ -8,7 +8,6 @@ import uk.co.real_logic.aeron.Aeron;
 import uk.co.real_logic.aeron.FragmentAssemblyAdapter;
 import uk.co.real_logic.aeron.Publication;
 import uk.co.real_logic.aeron.Subscription;
-import uk.co.real_logic.aeron.common.*;
 import uk.co.real_logic.aeron.common.concurrent.logbuffer.Header;
 
 import uk.co.real_logic.agrona.DirectBuffer;

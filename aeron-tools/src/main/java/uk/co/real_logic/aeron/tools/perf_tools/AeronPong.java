@@ -1,7 +1,6 @@
-package uk.co.real_logic.aeron.tools;
+package uk.co.real_logic.aeron.tools.perf_tools;
 
 import uk.co.real_logic.aeron.*;
-import uk.co.real_logic.aeron.common.*;
 import uk.co.real_logic.aeron.common.concurrent.logbuffer.Header;
 
 
