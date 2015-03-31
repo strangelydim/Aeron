@@ -28,7 +28,7 @@ import uk.co.real_logic.agrona.concurrent.UnsafeBuffer;
 /**
  * Basic Aeron publisher application
  */
-public class BasicPublisherWithFragmentation
+public class MultiplePublisherWithFrag
 {
     private static final int STREAM_ID = SampleConfiguration.STREAM_ID;
     private static final int STREAM_ID_2 = SampleConfiguration.STREAM_ID + 1;
@@ -99,8 +99,6 @@ public class BasicPublisherWithFragmentation
                         System.out.println(" yay for stream " + STREAM_ID + " and data length " + len + STREAM_ID_2 + " !! ");
                     }
                 }
-
-                //Thread.sleep(TimeUnit.SECONDS.toMillis(1));
             }
 
             System.out.println("Done sending.");

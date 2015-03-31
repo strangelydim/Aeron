@@ -33,9 +33,9 @@ import uk.co.real_logic.agrona.concurrent.IdleStrategy;
 //import static uk.co.real_logic.aeron.samples.SamplesUtil.printStringMessage;
 
 /**
- * Basic Aeron subscriber application which can receive fragmented messages
+ * Multiple subscriber application which can receive fragmented messages
  */
-public class BasicSubscriberWithFragDefragAdaptor
+public class MultipleSubscriberWithFrag
 {
     private static final int STREAM_ID = SampleConfiguration.STREAM_ID;
     private static final int STREAM_ID_2 = SampleConfiguration.STREAM_ID + 1;
@@ -58,11 +58,11 @@ public class BasicSubscriberWithFragDefragAdaptor
         // a new connection starts (eventNewConnection)
         // a connection goes inactive (eventInactiveConnection)
         final Aeron.Context ctx = new Aeron.Context() /* Callback at new producer starts */
-            .newConnectionHandler(BasicSubscriberWithFragDefragAdaptor::eventNewConnection)
-            .inactiveConnectionHandler(BasicSubscriberWithFragDefragAdaptor::eventInactiveConnection);
+            .newConnectionHandler(MultipleSubscriberWithFrag::eventNewConnection)
+            .inactiveConnectionHandler(MultipleSubscriberWithFrag::eventInactiveConnection);
 
         // dataHandler method is called for every new datagram received
-        // When a message is completely reassembled, the delegate method 'printStringMessage' is called
+        // When a message is completely reassembled, the delegate method 'reassembledStringMessage' is called
         final FragmentAssemblyAdapter dataHandler = new FragmentAssemblyAdapter(reassembledStringMessage(STREAM_ID));
 
         // Another Data handler for a different stream
