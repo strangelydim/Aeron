@@ -14,7 +14,7 @@ public class AeronPong implements PongImpl
   private Aeron.Context ctx = null;
   private FragmentAssemblyAdapter dataHandler = null;
   private Aeron aeron = null;
-  private Publication pongPub = null;
+  protected Publication pongPub = null;
   private Subscription pingSub = null;
   private int pingStreamId = 10;
   private int pongStreamId = 11;
@@ -22,7 +22,7 @@ public class AeronPong implements PongImpl
   private String pongChannel = "udp://localhost:55555";
   private int fragmentCountLimit;
   private BusySpinIdleStrategy idle = new BusySpinIdleStrategy();
-  private AtomicBoolean running = new AtomicBoolean(true);
+  protected AtomicBoolean running = new AtomicBoolean(true);
 
   public AeronPong()
   {
@@ -46,15 +46,26 @@ public class AeronPong implements PongImpl
       int fragmentsRead = pingSub.poll(fragmentCountLimit);
       idle.idle(fragmentsRead);
     }
+    System.out.println("Done");
+    shutdown();
   }
 
   public void shutdown()
   {
-    running.set(false);
+    pingSub.close();
+    pongPub.close();
+    aeron.close();
+    ctx.close();
   }
 
   public void pingHandler(DirectBuffer buffer, int offset, int length, Header header)
   {
+    if (buffer.getByte(offset) == (byte)'q')
+    {
+      running.set(false);
+      return;
+    }
+
     while (!pongPub.offer(buffer, offset, length))
     {
       idle.idle(0);

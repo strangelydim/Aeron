@@ -248,7 +248,7 @@ project(':aeron-tools') {
     }
 
     task ping(type:JavaExec) {
-        main = 'uk.co.real_logic.aeron.tools.PingRunner'
+        main = 'uk.co.real_logic.aeron.tools.perf_tools.PingRunner'
         classpath = sourceSets.main.runtimeClasspath
         systemProperties(System.properties);
         if (project.hasProperty('myargs')) {
@@ -257,9 +257,27 @@ project(':aeron-tools') {
     }
 
     task pong(type:JavaExec) {
-        main = 'uk.co.real_logic.aeron.tools.PongRunner'
+        main = 'uk.co.real_logic.aeron.tools.perf_tools.PongRunner'
         classpath = sourceSets.main.runtimeClasspath
         systemProperties(System.properties);
+        if (project.hasProperty('myargs')) {
+            args(myargs.split(','))
+        }
+    }
+
+    task throughputencyPub(type:JavaExec) {
+        main = 'uk.co.real_logic.aeron.tools.perf_tools.ThroughputencyPublisherRunner'
+        classpath = sourceSets.main.runtimeClasspath
+        systemProperties(System.properties)
+        if (project.hasProperty('myargs')) {
+            args(myargs.split(','))
+        }
+    }
+
+    task throughputencySub(type:JavaExec) {
+        main = 'uk.co.real_logic.aeron.tools.perf_tools.ThroughputencySubscriberRunner'
+        classpath = sourceSets.main.runtimeClasspath
+        systemProperties(System.properties)
         if (project.hasProperty('myargs')) {
             args(myargs.split(','))
         }

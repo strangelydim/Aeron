@@ -1,5 +1,9 @@
 package uk.co.real_logic.aeron.tools.perf_tools;
 
+import uk.co.real_logic.agrona.DirectBuffer;
+
+import java.lang.reflect.Constructor;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 import java.awt.Color;
@@ -28,14 +32,17 @@ public class PingRunner
     rtts = new long[numMsgs];
     idx = 0;
 
-    if (args[0].equalsIgnoreCase("aeron"))
+    try
     {
-      impl = new AeronPing();
+      Class<?> cl = Class.forName(args[0]);
+      Constructor<?> cons = cl.getConstructor();
+      impl = (PingImpl)cons.newInstance();
     }
-    else if (args[0].equalsIgnoreCase("aeron-claim"))
+    catch (Exception e)
     {
-      impl = new AeronClaimPing();
+      e.printStackTrace();
     }
+
 
     transport = args[0];
     impl.prepare();
@@ -48,15 +55,26 @@ public class PingRunner
   private void run()
   {
     // Send warm-up messages
+    System.out.println("Sending Warm-up Messages");
+    ByteBuffer buff = ByteBuffer.allocateDirect(msgLen);
+    //buff.put(0, (byte)'w');
     for (int i = 0; i < numWarmupMsgs; i++)
     {
-      impl.sendPingAndReceivePong(msgLen);
+      //buff.putLong(1, System.nanoTime());
+      //impl.sendPingAndReceivePong(buff);
     }
 
+    System.out.println("Sending Real Messages");
+    buff.put(0, (byte)'p');
     for (int i = 0; i < numMsgs; i++)
     {
-      rtts[i] = impl.sendPingAndReceivePong(msgLen);
+      buff.putLong(1, System.nanoTime());
+      System.out.println("Added: " + buff.getLong(1));
+      rtts[i] = impl.sendPingAndReceivePong(buff);
     }
+
+    buff.put(0, (byte)'q');
+    impl.sendExitMsg(buff);
   }
 
   private void printStats()
@@ -103,9 +121,7 @@ public class PingRunner
     }
     stdDev = Math.sqrt(sum / numMsgs);
 
-    /*generateScatterPlot(min, max, .9);
-    generateScatterPlot(min, max, .95);
-    generateScatterPlot(min, max, .98);*/
+    generateScatterPlot(min, max, .9, mean, stdDev);
     generateScatterPlot(min, max, .99, mean, stdDev);
     generateScatterPlot(min, max, .999, mean, stdDev);
     generateScatterPlot(min, max, .9999, mean, stdDev);

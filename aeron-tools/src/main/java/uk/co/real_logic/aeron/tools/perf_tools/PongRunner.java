@@ -1,19 +1,24 @@
 package uk.co.real_logic.aeron.tools.perf_tools;
 
+import java.lang.reflect.Constructor;
+
 public class PongRunner
 {
   private PongImpl impl = null;
 
   public PongRunner(String[] args)
   {
-    if (args[0].equalsIgnoreCase("aeron"))
+    try
     {
-      impl = new AeronPong();
+      Class<?> cl = Class.forName(args[0]);
+      Constructor<?> cons = cl.getConstructor();
+      impl = (PongImpl)cons.newInstance();
     }
-    else if (args[0].equalsIgnoreCase("aeron-claim"))
+    catch (Exception e)
     {
-      impl = new AeronClaimPong();
+      e.printStackTrace();
     }
+
     impl.prepare();
     impl.run();
   }

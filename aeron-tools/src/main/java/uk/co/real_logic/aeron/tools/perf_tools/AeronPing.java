@@ -18,20 +18,22 @@ public class AeronPing implements PingImpl
   private Aeron.Context ctx = null;
   private FragmentAssemblyAdapter dataHandler = null;
   private Aeron aeron = null;
-  private Publication pingPub = null;
-  private Subscription pongSub = null;
+  protected Publication pingPub = null;
+  protected Subscription pongSub = null;
   private CountDownLatch pongConnectionLatch = null;
-  private CountDownLatch pongedMessageLatch = null;
+  protected CountDownLatch pongedMessageLatch = null;
   private int pingStreamId = 10;
   private int pongStreamId = 11;
   private String pingChannel = "udp://localhost:44444";
   private String pongChannel = "udp://localhost:55555";
-  private long rtt;
-  private int fragmentCountLimit;
+  protected long rtt;
+  protected int fragmentCountLimit;
+  private UnsafeBuffer atomicBuffer = null;
+  protected IdleStrategy idle = null;
 
   public AeronPing()
   {
-
+    idle = new BusySpinIdleStrategy();
   }
 
   public void prepare()
@@ -58,17 +60,23 @@ public class AeronPing implements PingImpl
     }
   }
 
-  public long sendPingAndReceivePong(int msgLen)
+  public long sendPingAndReceivePong(ByteBuffer buff)
   {
-    IdleStrategy idle = new BusySpinIdleStrategy();
+
     pongedMessageLatch = new CountDownLatch(1);
-    UnsafeBuffer atomicBuffer = new UnsafeBuffer(ByteBuffer.allocateDirect(msgLen));
+
+    //if (atomicBuffer == null)
+    //{
+      atomicBuffer = new UnsafeBuffer(buff);
+    //}
 
     do
     {
-      atomicBuffer.putLong(0, System.nanoTime());
+      System.out.println("Before: " + buff.getLong(1));
+      //atomicBuffer.wrap(buff, 0, buff.capacity());
+      System.out.println("Set to: " + atomicBuffer.getLong(1));
     }
-    while (!pingPub.offer(atomicBuffer, 0, msgLen));
+    while (!pingPub.offer(atomicBuffer, 0, atomicBuffer.capacity()));
 
     while (pongSub.poll(fragmentCountLimit) <= 0)
     {
@@ -92,9 +100,21 @@ public class AeronPing implements PingImpl
     }
   }
 
+  public void sendExitMsg(ByteBuffer buff)
+  {
+    do
+    {
+      atomicBuffer.wrap(buff, 0, buff.capacity());
+    }
+    while (!pingPub.offer(atomicBuffer, 0, buff.capacity()));
+  }
+
   public void shutdown()
   {
-
+    pingPub.close();
+    pongSub.close();
+    ctx.close();
+    aeron.close();
   }
 
   private void newPongConnectionHandler(String channel, int streamId,
@@ -109,10 +129,9 @@ public class AeronPing implements PingImpl
   private void pongHandler(DirectBuffer buffer, int offset, int length,
       Header header)
   {
-    long pingTimestamp = buffer.getLong(offset);
-
+    long pingTimestamp = buffer.getLong(offset + 1);
+    System.out.println("Timestamp: " + pingTimestamp + " Current: " + System.nanoTime());
     rtt = System.nanoTime() - pingTimestamp;
-
     pongedMessageLatch.countDown();
   }
 }
