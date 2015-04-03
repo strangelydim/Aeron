@@ -3,9 +3,11 @@ package uk.co.real_logic.aeron.tools.perf_tools;
 import uk.co.real_logic.aeron.tools.MessagesAtMessagesPerSecondInterval;
 import uk.co.real_logic.aeron.tools.RateController;
 import uk.co.real_logic.aeron.tools.RateControllerInterval;
+import uk.co.real_logic.agrona.concurrent.UnsafeBuffer;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.ArrayList;
 
@@ -20,6 +22,8 @@ public class ThroughputencyPublisherRunner implements RateController.Callback
     private RateController rateCtlr = null;
     private int msgIdx = 0;
     private long rtts[] = new long[11111100];
+    private UnsafeBuffer buffer = null;
+    private int msgCount = 0;
 
     public ThroughputencyPublisherRunner(String[] args)
     {
@@ -58,6 +62,8 @@ public class ThroughputencyPublisherRunner implements RateController.Callback
         intervals.add(new MessagesAtMessagesPerSecondInterval(1000000, 100000));
         intervals.add(new MessagesAtMessagesPerSecondInterval(10000000, 1000000));
 
+        buffer = new UnsafeBuffer(ByteBuffer.allocateDirect(msgLen));
+        msgCount = 0;
         try
         {
             rateCtlr = new RateController(this, intervals);
@@ -76,7 +82,10 @@ public class ThroughputencyPublisherRunner implements RateController.Callback
     {
         for (int i = 0; i < warmupMsgs; i++)
         {
-            impl.sendMsg(msgLen, i, (byte)'w');
+            buffer.putLong(0, msgCount++);
+            buffer.putLong(8, System.nanoTime());
+            buffer.putByte(16, (byte)'x');
+            impl.sendMsg(buffer);
         }
 
         long start = System.currentTimeMillis();
@@ -137,7 +146,10 @@ public class ThroughputencyPublisherRunner implements RateController.Callback
 
     public int onNext()
     {
-        impl.sendMsg(msgLen, msgIdx++, (byte)'x');
+        buffer.putLong(0, msgCount++);
+        buffer.putLong(8, System.nanoTime());
+        buffer.putByte(16, (byte)'x');
+        impl.sendMsg(buffer);
 
         return msgLen;
     }

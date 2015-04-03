@@ -1,12 +1,12 @@
 package uk.co.real_logic.aeron.tools.perf_tools;
 
-import java.nio.ByteBuffer;
+import uk.co.real_logic.agrona.concurrent.UnsafeBuffer;
 
 public interface PingImpl
 {
   void prepare();
   void connect();
-  long sendPingAndReceivePong(ByteBuffer buf);
-  void sendExitMsg(ByteBuffer buf);
+  void sendPingAndReceivePong(UnsafeBuffer buf);
+  void sendExitMsg(UnsafeBuffer buf);
   void shutdown();
 }

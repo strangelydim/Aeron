@@ -10,7 +10,6 @@ import uk.co.real_logic.agrona.concurrent.BusySpinIdleStrategy;
 import uk.co.real_logic.agrona.concurrent.IdleStrategy;
 import uk.co.real_logic.agrona.concurrent.UnsafeBuffer;
 
-import java.nio.ByteBuffer;
 import java.util.concurrent.CountDownLatch;
 
 /**
@@ -80,17 +79,13 @@ public class AeronPublisher implements ThroughputencyPublisherImpl
         }
     }
 
-    public void sendMsg(int msgLen, long msgCount, byte marker)
+    public void sendMsg(UnsafeBuffer buff)
     {
-        UnsafeBuffer atomicBuffer = new UnsafeBuffer(ByteBuffer.allocateDirect(msgLen));
-
         do
         {
-            atomicBuffer.putLong(0, msgCount);
-            atomicBuffer.putLong(8, System.nanoTime());
-            atomicBuffer.putByte(16, marker);
+
         }
-        while (!pub.offer(atomicBuffer, 0, msgLen));
+        while (!pub.offer(buff, 0, buff.capacity()));
     }
 
     public void shutdown()
