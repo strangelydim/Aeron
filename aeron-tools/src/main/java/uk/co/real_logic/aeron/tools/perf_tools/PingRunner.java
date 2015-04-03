@@ -19,7 +19,7 @@ public class PingRunner
 {
     private int numMsgs = 10000000;
     private int numWarmupMsgs = 100000;
-    private int msgLen = 64;
+    private int msgLen = 20;
     private long[][] timestamps = null;
     private double[] sortedRTT = null;
     private double[] tmp = null;

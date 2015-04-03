@@ -14,6 +14,10 @@ import uk.co.real_logic.agrona.concurrent.BusySpinIdleStrategy;
 import uk.co.real_logic.agrona.concurrent.IdleStrategy;
 import uk.co.real_logic.agrona.concurrent.UnsafeBuffer;
 
+import javax.imageio.ImageIO;
+import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.io.File;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -38,11 +42,11 @@ public class AeronThroughputencyPublisher implements RateController.Callback
     private Thread subThread = null;
     private boolean running = true;
     private IdleStrategy idle = null;
-    private int warmUpMsgs = 10000;
-    private int msgLen = 64;
+    private int warmUpMsgs = 100000;
+    private int msgLen = 20;
     private RateController rateCtlr = null;
     private UnsafeBuffer buffer = null;
-    private long timestamps[][] = new long[2][111111100];
+    private long timestamps[][] = new long[2][150000000];
     private int msgCount = 0;
 
     public AeronThroughputencyPublisher()
@@ -54,15 +58,15 @@ public class AeronThroughputencyPublisher implements RateController.Callback
         pub = aeron.addPublication(pubChannel, pubStreamId);
         sub = aeron.addSubscription(subChannel, subStreamId, dataHandler);
         connectionLatch = new CountDownLatch(1);
-        fragmentCountLimit = 1;
+        fragmentCountLimit = 2;
         idle = new BusySpinIdleStrategy();
 
         List<RateControllerInterval> intervals = new ArrayList<RateControllerInterval>();
-        intervals.add(new MessagesAtMessagesPerSecondInterval(100, 10));
-        intervals.add(new MessagesAtMessagesPerSecondInterval(1000, 100));
-        intervals.add(new MessagesAtMessagesPerSecondInterval(10000, 1000));
-        intervals.add(new MessagesAtMessagesPerSecondInterval(100000, 10000));
-        intervals.add(new MessagesAtMessagesPerSecondInterval(1000000, 100000));
+        //intervals.add(new MessagesAtMessagesPerSecondInterval(10000, 100));
+        //intervals.add(new MessagesAtMessagesPerSecondInterval(100000, 1000));
+        //intervals.add(new MessagesAtMessagesPerSecondInterval(1000000, 10000));
+        //intervals.add(new MessagesAtMessagesPerSecondInterval(10000000, 100000));
+        intervals.add(new MessagesAtMessagesPerSecondInterval(150000000, 15000000));
 
         buffer = new UnsafeBuffer(ByteBuffer.allocateDirect(msgLen));
         msgCount = 0;
@@ -106,18 +110,18 @@ public class AeronThroughputencyPublisher implements RateController.Callback
         {
             buffer.putByte(0, (byte)'w');
 
-            do
+            while (!pub.offer(buffer, 0, buffer.capacity()))
             {
-
+                idle.idle(0);
             }
-            while (!pub.offer(buffer, 0, buffer.capacity()));
         }
 
+        int start = (int)System.currentTimeMillis();
         while (rateCtlr.next())
         {
 
         }
-
+        int total = (int)(System.currentTimeMillis() - start) / 1000;
         buffer.putByte(0, (byte)'q');
 
         while (!pub.offer(buffer, 0, buffer.capacity()))
@@ -125,6 +129,7 @@ public class AeronThroughputencyPublisher implements RateController.Callback
             idle.idle(0);
         }
 
+        System.out.println("Duration: " + total + " seconds");
         try
         {
             Thread.sleep(1000);
@@ -156,11 +161,12 @@ public class AeronThroughputencyPublisher implements RateController.Callback
         buffer.putByte(0, (byte)'p');
         buffer.putInt(1, msgCount);
         timestamps[0][msgCount] = System.nanoTime();
-        do
-        {
 
+        while (!pub.offer(buffer, 0, buffer.capacity()))
+        {
+            idle.idle(0);
+            timestamps[0][msgCount] = System.nanoTime();
         }
-        while (!pub.offer(buffer, 0, buffer.capacity()));
         msgCount++;
 
         return msgLen;
@@ -187,32 +193,83 @@ public class AeronThroughputencyPublisher implements RateController.Callback
     private void computeStats()
     {
         double sum = 0.0;
-        for (int i = 0; i < 100; i++)
-        {
-            sum += (timestamps[1][i] - timestamps[0][i]) / 1000.0;
-        }
-        System.out.println("Mean latency for 10msgs/sec: " + sum / 100.0);
+        double min = Double.MAX_VALUE;
+        double max = Double.MIN_VALUE;
 
-        sum = 0.0;
-        for (int i = 100; i < 1100; i++)
-        {
-            sum += (timestamps[1][i] - timestamps[0][i]) / 1000.0;
-        }
-        System.out.println("Mean latency for 100msgs/sec: " + sum / 1000.0);
+        //computeStats(0, 10000, "100mps");
+        //computeStats(10000, 110000, "1Kmps");
+        //computeStats(110000, 1110000, "10Kmps");
+        //computeStats(1110000, 11110000, "100Kmps");
+        //computeStats(11110000, 111110000, "1Mmps");
 
-        sum = 0.0;
-        for (int i = 1100; i < 11100; i++)
-        {
-            sum += (timestamps[1][i] - timestamps[0][i]) / 1000.0;
-        }
-        System.out.println("Mean latency for 1Kmsgs/sec: " + sum / 10000.0);
 
-        sum = 0.0;
-        for (int i = 11100; i < 111100; i++)
+    }
+
+    private void computeStats(int start, int end, String title)
+    {
+        double sum = 0.0;
+        double min = Double.MAX_VALUE;
+        double max = Double.MIN_VALUE;
+
+        for (int i = start; i < end; i++)
         {
-            sum += (timestamps[1][i] - timestamps[0][i]) / 1000.0;
+            double ts = (timestamps[1][i] - timestamps[0][i]) / 1000.0;
+            sum += ts;
+            if (ts  < min)
+            {
+                min = ts;
+            }
+            if (ts > max)
+            {
+                max = ts;
+            }
         }
-        System.out.println("Mean latency for 10Kmsgs/sec: " + sum / 100000.0);
+        System.out.println("Mean latency for " + title + ": " + sum / (end - start));
+        generateScatterPlot(title, min, max, start, end);
+    }
+
+    private void generateScatterPlot(String title, double min, double max, int start, int end)
+    {
+        BufferedImage image = new BufferedImage(500, 400, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2 = image.createGraphics();
+        FontMetrics fm = g2.getFontMetrics();
+        String filename = title + ".png";
+        File imageFile = new File(filename);
+        int width = 390;
+        int height = 370;
+        int num = end - start;
+        double stepY = (double) (height / (double) (max));
+        double stepX = (double) width / num;
+
+        g2.setColor(Color.white);
+        g2.fillRect(0, 0, 500, 400);
+        g2.setColor(Color.black);
+
+        g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        g2.drawString("Latency ScatterPlot (microseconds)", 250 - fm.stringWidth("Latency ScatterPlot (microseconds)") / 2, 20);
+        g2.drawString("" + max, 10, 20);
+        g2.drawLine(100, 20, 100, 390);
+        g2.drawLine(100, 390, 490, 390);
+
+        g2.setColor(Color.red);
+        for (int i = start; i < end; i++)
+        {
+            if ((timestamps[1][i] - timestamps[0][i]) / 1000.0 < max)
+            {
+                int posX = 100 + (int) (stepX * (i - start));
+                int posY = 390 - (int) (stepY * ((timestamps[1][i] - timestamps[0][i]) / 1000.0));
+                g2.drawLine(posX, posY, posX, 390);
+            }
+        }
+
+        try
+        {
+            ImageIO.write(image, "png", imageFile);
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
     }
 
     public static void main(String[] args)

@@ -33,7 +33,7 @@ public class AeronThroughputencySubscriber
         aeron = Aeron.connect(ctx);
         pub = aeron.addPublication(pubChannel, pubStreamId);
         sub = aeron.addSubscription(subChannel, subStreamId, dataHandler);
-        fragmentCountLimit = 1;
+        fragmentCountLimit = 2;
 
         while (running)
         {
