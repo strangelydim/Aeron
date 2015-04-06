@@ -6,7 +6,11 @@ import uk.co.real_logic.aeron.Publication;
 import uk.co.real_logic.aeron.Subscription;
 import uk.co.real_logic.aeron.common.concurrent.logbuffer.Header;
 import uk.co.real_logic.agrona.DirectBuffer;
-import uk.co.real_logic.agrona.concurrent.BusySpinIdleStrategy;
+import uk.co.real_logic.agrona.concurrent.IdleStrategy;
+import uk.co.real_logic.agrona.concurrent.NoOpIdleStrategy;
+
+import java.io.FileOutputStream;
+import java.io.PrintWriter;
 
 /**
  * Created by philipjohnson1 on 4/2/15.
@@ -23,8 +27,9 @@ public class AeronThroughputencySubscriber
     private String subChannel = "udp://localhost:44444";
     private String pubChannel = "udp://localhost:55555";
     private int fragmentCountLimit;
-    private BusySpinIdleStrategy idle = new BusySpinIdleStrategy();
+    private IdleStrategy idle = new NoOpIdleStrategy();
     private boolean running = true;
+    private long timestamps[] = new long[41111100];
 
     public AeronThroughputencySubscriber()
     {
@@ -38,7 +43,21 @@ public class AeronThroughputencySubscriber
         while (running)
         {
             int fragmentsRead = sub.poll(fragmentCountLimit);
-            idle.idle(fragmentsRead);
+            //idle.idle(fragmentsRead);
+        }
+
+        try
+        {
+            PrintWriter out = new PrintWriter(new FileOutputStream("sub.ts"));
+            for (int i = 1; i < timestamps.length; i++)
+            {
+                out.println(timestamps[i] - timestamps[i - 1]);
+            }
+            out.close();
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
         }
         sub.close();
         pub.close();
@@ -53,7 +72,10 @@ public class AeronThroughputencySubscriber
             running = false;
             return;
         }
-
+        else if (buffer.getByte(offset) == (byte)'p')
+        {
+            timestamps[buffer.getInt(offset + 1)] = System.nanoTime();
+        }
         while (!pub.offer(buffer, offset, length))
         {
 

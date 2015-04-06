@@ -10,7 +10,7 @@ import uk.co.real_logic.aeron.tools.RateController;
 import uk.co.real_logic.aeron.tools.RateControllerInterval;
 
 import uk.co.real_logic.agrona.DirectBuffer;
-import uk.co.real_logic.agrona.concurrent.BusySpinIdleStrategy;
+import uk.co.real_logic.agrona.concurrent.NoOpIdleStrategy;
 import uk.co.real_logic.agrona.concurrent.IdleStrategy;
 import uk.co.real_logic.agrona.concurrent.UnsafeBuffer;
 
@@ -18,6 +18,8 @@ import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.PrintWriter;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -46,7 +48,7 @@ public class AeronThroughputencyPublisher implements RateController.Callback
     private int msgLen = 20;
     private RateController rateCtlr = null;
     private UnsafeBuffer buffer = null;
-    private long timestamps[][] = new long[2][150000000];
+    private long timestamps[][] = new long[2][41111100];
     private int msgCount = 0;
 
     public AeronThroughputencyPublisher()
@@ -59,15 +61,16 @@ public class AeronThroughputencyPublisher implements RateController.Callback
         sub = aeron.addSubscription(subChannel, subStreamId, dataHandler);
         connectionLatch = new CountDownLatch(1);
         fragmentCountLimit = 2;
-        idle = new BusySpinIdleStrategy();
+        idle = new NoOpIdleStrategy();
 
         List<RateControllerInterval> intervals = new ArrayList<RateControllerInterval>();
-        //intervals.add(new MessagesAtMessagesPerSecondInterval(10000, 100));
-        //intervals.add(new MessagesAtMessagesPerSecondInterval(100000, 1000));
-        //intervals.add(new MessagesAtMessagesPerSecondInterval(1000000, 10000));
-        //intervals.add(new MessagesAtMessagesPerSecondInterval(10000000, 100000));
-        intervals.add(new MessagesAtMessagesPerSecondInterval(150000000, 15000000));
-
+        intervals.add(new MessagesAtMessagesPerSecondInterval(100, 10));
+        intervals.add(new MessagesAtMessagesPerSecondInterval(1000, 100));
+        intervals.add(new MessagesAtMessagesPerSecondInterval(10000, 1000));
+        intervals.add(new MessagesAtMessagesPerSecondInterval(100000, 10000));
+        intervals.add(new MessagesAtMessagesPerSecondInterval(1000000, 100000));
+        intervals.add(new MessagesAtMessagesPerSecondInterval(10000000, 1000000));
+        intervals.add(new MessagesAtMessagesPerSecondInterval(30000000, 3000000));
         buffer = new UnsafeBuffer(ByteBuffer.allocateDirect(msgLen));
         msgCount = 0;
 
@@ -88,7 +91,7 @@ public class AeronThroughputencyPublisher implements RateController.Callback
                 {
                     while (sub.poll(fragmentCountLimit) <= 0 && running)
                     {
-                        idle.idle(0);
+                        //idle.idle(0);
                     }
                 }
                 System.out.println("Done");
@@ -160,11 +163,12 @@ public class AeronThroughputencyPublisher implements RateController.Callback
     {
         buffer.putByte(0, (byte)'p');
         buffer.putInt(1, msgCount);
+        System.currentTimeMillis();
         timestamps[0][msgCount] = System.nanoTime();
 
         while (!pub.offer(buffer, 0, buffer.capacity()))
         {
-            idle.idle(0);
+            //idle.idle(0);
             timestamps[0][msgCount] = System.nanoTime();
         }
         msgCount++;
@@ -196,13 +200,13 @@ public class AeronThroughputencyPublisher implements RateController.Callback
         double min = Double.MAX_VALUE;
         double max = Double.MIN_VALUE;
 
-        //computeStats(0, 10000, "100mps");
-        //computeStats(10000, 110000, "1Kmps");
-        //computeStats(110000, 1110000, "10Kmps");
-        //computeStats(1110000, 11110000, "100Kmps");
-        //computeStats(11110000, 111110000, "1Mmps");
-
-
+        computeStats(0, 100, "10mps");
+        computeStats(100, 1000, "100mps");
+        computeStats(1000, 11000, "1Kmps");
+        computeStats(11000, 111000, "10Kmps");
+        computeStats(111000, 1111000, "100Kmps");
+        computeStats(1111000, 11111000, "1Mmps");
+        computeStats(11111000, 41111000, "3Mmps");
     }
 
     private void computeStats(int start, int end, String title)
@@ -226,6 +230,19 @@ public class AeronThroughputencyPublisher implements RateController.Callback
         }
         System.out.println("Mean latency for " + title + ": " + sum / (end - start));
         generateScatterPlot(title, min, max, start, end);
+        try
+        {
+            PrintWriter out = new PrintWriter(new FileOutputStream("pub.ts"));
+            for (int i = 1; i< timestamps[0].length; i++)
+            {
+                out.println(timestamps[0][i] - timestamps[0][i - 1]);
+            }
+            out.close();
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
     }
 
     private void generateScatterPlot(String title, double min, double max, int start, int end)
@@ -254,7 +271,7 @@ public class AeronThroughputencyPublisher implements RateController.Callback
         g2.setColor(Color.red);
         for (int i = start; i < end; i++)
         {
-            if ((timestamps[1][i] - timestamps[0][i]) / 1000.0 < max)
+            if ((timestamps[1][i] - timestamps[0][i]) / 1000.0 <= max)
             {
                 int posX = 100 + (int) (stepX * (i - start));
                 int posY = 390 - (int) (stepY * ((timestamps[1][i] - timestamps[0][i]) / 1000.0));
