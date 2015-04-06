@@ -74,19 +74,15 @@ public class MultiDriverTest
 
         driverAContext.termBufferLength(TERM_BUFFER_SIZE);
         driverAContext.dirsDeleteOnExit(true);
-        driverAContext.adminDirName(baseDirA + File.separator + "conductor");
-        driverAContext.dataDirName(baseDirA + File.separator + "data");
+        driverAContext.dirName(baseDirA);
 
-        aeronAContext.adminDirName(driverAContext.adminDirName());
-        aeronAContext.dataDirName(driverAContext.dataDirName());
+        aeronAContext.dirName(driverAContext.dirName());
 
         driverBContext.termBufferLength(TERM_BUFFER_SIZE);
         driverBContext.dirsDeleteOnExit(true);
-        driverBContext.adminDirName(baseDirB + File.separator + "conductor");
-        driverBContext.dataDirName(baseDirB + File.separator + "data");
+        driverBContext.dirName(baseDirB);
 
-        aeronBContext.adminDirName(driverBContext.adminDirName());
-        aeronBContext.dataDirName(driverBContext.dataDirName());
+        aeronBContext.dirName(driverBContext.dirName());
 
         driverA = MediaDriver.launch(driverAContext);
         driverB = MediaDriver.launch(driverBContext);
@@ -119,13 +115,15 @@ public class MultiDriverTest
     }
 
     @Test(timeout = 10000)
-    public void shouldSpinUpAndShutdown()
+    public void shouldSpinUpAndShutdown() throws Exception
     {
         launch();
 
         publication = clientA.addPublication(MULTICAST_URI, STREAM_ID, SESSION_ID);
         subscriptionA = clientA.addSubscription(MULTICAST_URI, STREAM_ID, dataHandlerA);
         subscriptionB = clientB.addSubscription(MULTICAST_URI, STREAM_ID, dataHandlerB);
+
+        Thread.sleep(20); // allow for connections to be established
     }
 
     @Test(timeout = 10000)

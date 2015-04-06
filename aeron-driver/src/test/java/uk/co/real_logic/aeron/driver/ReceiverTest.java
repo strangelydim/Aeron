@@ -25,7 +25,7 @@ import uk.co.real_logic.agrona.concurrent.AtomicCounter;
 import uk.co.real_logic.agrona.concurrent.NanoClock;
 import uk.co.real_logic.agrona.concurrent.OneToOneConcurrentArrayQueue;
 import uk.co.real_logic.aeron.common.concurrent.logbuffer.FrameDescriptor;
-import uk.co.real_logic.aeron.common.concurrent.logbuffer.LogReader;
+import uk.co.real_logic.aeron.common.concurrent.logbuffer.TermReader;
 import uk.co.real_logic.aeron.common.event.EventLogger;
 import uk.co.real_logic.aeron.common.protocol.DataHeaderFlyweight;
 import uk.co.real_logic.aeron.common.protocol.HeaderFlyweight;
@@ -41,8 +41,7 @@ import uk.co.real_logic.aeron.driver.cmd.DriverConductorCmd;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
-import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -73,13 +72,12 @@ public class ReceiverTest
     private static final InetSocketAddress SOURCE_ADDRESS = new InetSocketAddress("localhost", 45679);
 
     private static final PositionIndicator POSITION_INDICATOR = mock(PositionIndicator.class);
-    private static final List<PositionIndicator> POSITION_INDICATORS = new ArrayList<>(Arrays.asList(POSITION_INDICATOR));
+    private static final List<PositionIndicator> POSITION_INDICATORS = Collections.singletonList(POSITION_INDICATOR);
 
     private final LossHandler mockLossHandler = mock(LossHandler.class);
     private final TransportPoller mockTransportPoller = mock(TransportPoller.class);
     private final SystemCounters mockSystemCounters = mock(SystemCounters.class);
     private final RawLogFactory mockRawLogFactory = mock(RawLogFactory.class);
-    private final PositionReporter mockCompletedReceivedPosition = spy(new HeapPositionReporter());
     private final PositionReporter mockHighestReceivedPosition = spy(new HeapPositionReporter());
     private final ByteBuffer dataFrameBuffer = ByteBuffer.allocate(2 * 1024);
     private final UnsafeBuffer dataBuffer = new UnsafeBuffer(dataFrameBuffer);
@@ -98,7 +96,7 @@ public class ReceiverTest
     private final TimerWheel timerWheel = new TimerWheel(
         clock, Configuration.CONDUCTOR_TICK_DURATION_US, TimeUnit.MICROSECONDS, Configuration.CONDUCTOR_TICKS_PER_WHEEL);
 
-    private LogReader[] logReaders;
+    private TermReader[] termReaders;
     private DatagramChannel senderChannel;
 
     private InetSocketAddress senderAddress = new InetSocketAddress("localhost", 40123);
@@ -142,10 +140,10 @@ public class ReceiverTest
         senderChannel.bind(senderAddress);
         senderChannel.configureBlocking(false);
 
-        logReaders = rawLog
+        termReaders = rawLog
             .stream()
-            .map((partition) -> new LogReader(partition.termBuffer(), partition.metaDataBuffer()))
-            .toArray(LogReader[]::new);
+            .map((partition) -> new TermReader(partition.termBuffer()))
+            .toArray(TermReader[]::new);
 
         receiveChannelEndpoint = new ReceiveChannelEndpoint(
             UdpChannel.parse(URI), driverConductorProxy, mockLogger, mockSystemCounters, (address, length) -> false);
@@ -168,7 +166,7 @@ public class ReceiverTest
         receiver.doWork();
 
         fillSetupFrame(setupHeader);
-        receiveChannelEndpoint.onSetupFrame(setupHeader, setupBuffer, setupHeader.frameLength(), senderAddress);
+        receiveChannelEndpoint.onSetupMessage(setupHeader, setupBuffer, setupHeader.frameLength(), senderAddress);
 
         final DriverConnection connection = new DriverConnection(
             receiveChannelEndpoint,
@@ -179,12 +177,10 @@ public class ReceiverTest
             ACTIVE_TERM_ID,
             INITIAL_TERM_OFFSET,
             INITIAL_WINDOW_LENGTH,
-            STATUS_MESSAGE_TIMEOUT,
             rawLog,
             mockLossHandler,
             receiveChannelEndpoint.composeStatusMessageSender(senderAddress, SESSION_ID, STREAM_ID),
             POSITION_INDICATORS,
-            mockCompletedReceivedPosition,
             mockHighestReceivedPosition,
             clock,
             mockSystemCounters,
@@ -209,7 +205,7 @@ public class ReceiverTest
 
         receiver.doWork();
 
-        connection.sendPendingStatusMessages(1000);
+        connection.sendPendingStatusMessage(1000, STATUS_MESSAGE_TIMEOUT);
 
         final ByteBuffer rcvBuffer = ByteBuffer.allocateDirect(256);
         final InetSocketAddress rcvAddress = (InetSocketAddress)senderChannel.receive(rcvBuffer);
@@ -234,7 +230,7 @@ public class ReceiverTest
         receiver.doWork();
 
         fillSetupFrame(setupHeader);
-        receiveChannelEndpoint.onSetupFrame(setupHeader, setupBuffer, setupHeader.frameLength(), senderAddress);
+        receiveChannelEndpoint.onSetupMessage(setupHeader, setupBuffer, setupHeader.frameLength(), senderAddress);
 
         int messagesRead = toConductorQueue.drain(
             (e) ->
@@ -252,12 +248,10 @@ public class ReceiverTest
                         ACTIVE_TERM_ID,
                         INITIAL_TERM_OFFSET,
                         INITIAL_WINDOW_LENGTH,
-                        STATUS_MESSAGE_TIMEOUT,
                         rawLog,
                         mockLossHandler,
                         receiveChannelEndpoint.composeStatusMessageSender(senderAddress, SESSION_ID, STREAM_ID),
                         POSITION_INDICATORS,
-                        mockCompletedReceivedPosition,
                         mockHighestReceivedPosition,
                         clock,
                         mockSystemCounters,
@@ -270,9 +264,10 @@ public class ReceiverTest
         receiver.doWork();
 
         fillDataFrame(dataHeader, 0, FAKE_PAYLOAD);
-        receiveChannelEndpoint.onDataFrame(dataHeader, dataBuffer, dataHeader.frameLength(), senderAddress);
+        receiveChannelEndpoint.onDataPacket(dataHeader, dataBuffer, dataHeader.frameLength(), senderAddress);
 
-        messagesRead = logReaders[ACTIVE_INDEX].read(
+        messagesRead = termReaders[ACTIVE_INDEX].read(
+            termReaders[ACTIVE_INDEX].offset(),
             (buffer, offset, length, header) ->
             {
                 assertThat(header.type(), is(HeaderFlyweight.HDR_TYPE_DATA));
@@ -296,7 +291,7 @@ public class ReceiverTest
         receiver.doWork();
 
         fillSetupFrame(setupHeader);
-        receiveChannelEndpoint.onSetupFrame(setupHeader, setupBuffer, setupHeader.frameLength(), senderAddress);
+        receiveChannelEndpoint.onSetupMessage(setupHeader, setupBuffer, setupHeader.frameLength(), senderAddress);
 
         int messagesRead = toConductorQueue.drain(
             (e) ->
@@ -314,12 +309,10 @@ public class ReceiverTest
                         ACTIVE_TERM_ID,
                         INITIAL_TERM_OFFSET,
                         INITIAL_WINDOW_LENGTH,
-                        STATUS_MESSAGE_TIMEOUT,
                         rawLog,
                         mockLossHandler,
                         receiveChannelEndpoint.composeStatusMessageSender(senderAddress, SESSION_ID, STREAM_ID),
                         POSITION_INDICATORS,
-                        mockCompletedReceivedPosition,
                         mockHighestReceivedPosition,
                         clock,
                         mockSystemCounters,
@@ -332,12 +325,13 @@ public class ReceiverTest
         receiver.doWork();
 
         fillDataFrame(dataHeader, 0, FAKE_PAYLOAD);  // initial data frame
-        receiveChannelEndpoint.onDataFrame(dataHeader, dataBuffer, dataHeader.frameLength(), senderAddress);
+        receiveChannelEndpoint.onDataPacket(dataHeader, dataBuffer, dataHeader.frameLength(), senderAddress);
 
         fillDataFrame(dataHeader, 0, FAKE_PAYLOAD);  // heartbeat with same term offset
-        receiveChannelEndpoint.onDataFrame(dataHeader, dataBuffer, dataHeader.frameLength(), senderAddress);
+        receiveChannelEndpoint.onDataPacket(dataHeader, dataBuffer, dataHeader.frameLength(), senderAddress);
 
-        messagesRead = logReaders[ACTIVE_INDEX].read(
+        messagesRead = termReaders[ACTIVE_INDEX].read(
+            termReaders[ACTIVE_INDEX].offset(),
             (buffer, offset, length, header) ->
             {
                 assertThat(header.type(), is(HeaderFlyweight.HDR_TYPE_DATA));
@@ -361,7 +355,7 @@ public class ReceiverTest
         receiver.doWork();
 
         fillSetupFrame(setupHeader);
-        receiveChannelEndpoint.onSetupFrame(setupHeader, setupBuffer, setupHeader.frameLength(), senderAddress);
+        receiveChannelEndpoint.onSetupMessage(setupHeader, setupBuffer, setupHeader.frameLength(), senderAddress);
 
         int messagesRead = toConductorQueue.drain(
             (e) ->
@@ -379,12 +373,10 @@ public class ReceiverTest
                         ACTIVE_TERM_ID,
                         INITIAL_TERM_OFFSET,
                         INITIAL_WINDOW_LENGTH,
-                        STATUS_MESSAGE_TIMEOUT,
                         rawLog,
                         mockLossHandler,
                         receiveChannelEndpoint.composeStatusMessageSender(senderAddress, SESSION_ID, STREAM_ID),
                         POSITION_INDICATORS,
-                        mockCompletedReceivedPosition,
                         mockHighestReceivedPosition,
                         clock,
                         mockSystemCounters,
@@ -397,12 +389,13 @@ public class ReceiverTest
         receiver.doWork();
 
         fillDataFrame(dataHeader, 0, FAKE_PAYLOAD);  // heartbeat with same term offset
-        receiveChannelEndpoint.onDataFrame(dataHeader, dataBuffer, dataHeader.frameLength(), senderAddress);
+        receiveChannelEndpoint.onDataPacket(dataHeader, dataBuffer, dataHeader.frameLength(), senderAddress);
 
         fillDataFrame(dataHeader, 0, FAKE_PAYLOAD);  // initial data frame
-        receiveChannelEndpoint.onDataFrame(dataHeader, dataBuffer, dataHeader.frameLength(), senderAddress);
+        receiveChannelEndpoint.onDataPacket(dataHeader, dataBuffer, dataHeader.frameLength(), senderAddress);
 
-        messagesRead = logReaders[ACTIVE_INDEX].read(
+        messagesRead = termReaders[ACTIVE_INDEX].read(
+            termReaders[ACTIVE_INDEX].offset(),
             (buffer, offset, length, header) ->
             {
                 assertThat(header.type(), is(HeaderFlyweight.HDR_TYPE_DATA));
@@ -430,7 +423,7 @@ public class ReceiverTest
         receiver.doWork();
 
         fillSetupFrame(setupHeader, initialTermOffset);
-        receiveChannelEndpoint.onSetupFrame(setupHeader, setupBuffer, setupHeader.frameLength(), senderAddress);
+        receiveChannelEndpoint.onSetupMessage(setupHeader, setupBuffer, setupHeader.frameLength(), senderAddress);
 
         int messagesRead = toConductorQueue.drain(
             (e) ->
@@ -448,12 +441,10 @@ public class ReceiverTest
                         ACTIVE_TERM_ID,
                         initialTermOffset,
                         INITIAL_WINDOW_LENGTH,
-                        STATUS_MESSAGE_TIMEOUT,
                         rawLog,
                         mockLossHandler,
                         receiveChannelEndpoint.composeStatusMessageSender(senderAddress, SESSION_ID, STREAM_ID),
                         POSITION_INDICATORS,
-                        mockCompletedReceivedPosition,
                         mockHighestReceivedPosition,
                         clock,
                         mockSystemCounters,
@@ -463,20 +454,17 @@ public class ReceiverTest
 
         assertThat(messagesRead, is(1));
 
-        verify(mockCompletedReceivedPosition).position(initialTermOffset);
         verify(mockHighestReceivedPosition).position(initialTermOffset);
 
         receiver.doWork();
 
         fillDataFrame(dataHeader, initialTermOffset, FAKE_PAYLOAD);  // initial data frame
-        receiveChannelEndpoint.onDataFrame(dataHeader, dataBuffer, alignedDataFrameLength, senderAddress);
+        receiveChannelEndpoint.onDataPacket(dataHeader, dataBuffer, alignedDataFrameLength, senderAddress);
 
-        verify(mockCompletedReceivedPosition).position(initialTermOffset + alignedDataFrameLength);
         verify(mockHighestReceivedPosition).position(initialTermOffset + alignedDataFrameLength);
 
-        logReaders[ACTIVE_INDEX].seek(initialTermOffset);
-
-        messagesRead = logReaders[ACTIVE_INDEX].read(
+        messagesRead = termReaders[ACTIVE_INDEX].read(
+            initialTermOffset,
             (buffer, offset, length, header) ->
             {
                 assertThat(header.type(), is(HeaderFlyweight.HDR_TYPE_DATA));
