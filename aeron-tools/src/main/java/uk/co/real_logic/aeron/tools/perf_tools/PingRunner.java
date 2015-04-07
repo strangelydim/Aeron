@@ -128,12 +128,32 @@ public class PingRunner
         }
         stdDev = Math.sqrt(sum / numMsgs);
 
-        generateScatterPlot(min, max, .9, mean, stdDev);
-        generateScatterPlot(min, max, .99, mean, stdDev);
-        generateScatterPlot(min, max, .999, mean, stdDev);
-        generateScatterPlot(min, max, .9999, mean, stdDev);
-        generateScatterPlot(min, max, .99999, mean, stdDev);
-        generateScatterPlot(min, max, .999999, mean, stdDev);
+        BufferedImage image = new BufferedImage(1800, 1000, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2 = image.createGraphics();
+        g2.setColor(Color.white);
+        g2.fillRect(0, 0, 1800, 1000);
+        generateScatterPlot(image, g2, 0, 0, min, max, .9, mean, stdDev);
+        generateScatterPlot(image, g2, 600, 0, min, max, .99, mean, stdDev);
+        generateScatterPlot(image, g2, 1200, 0, min, max, .999, mean, stdDev);
+        generateScatterPlot(image, g2, 0, 500, min, max, .9999, mean, stdDev);
+        generateScatterPlot(image, g2, 600, 500, min, max, .99999, mean, stdDev);
+        generateScatterPlot(image, g2, 1200, 500, min, max, .999999, mean, stdDev);
+
+        g2.setColor(Color.black);
+        g2.drawString(String.format("Mean: %.3fus Std. Dev %.3fus", mean, stdDev), 20, 940);
+        g2.drawString("Min: " + min + " Index: " + minIdx, 20, 960);
+        g2.drawString("Max: " + max + " Index: " + maxIdx, 20, 980);
+
+        String filename = transport + "_scatterplot.png";
+        File imageFile = new File(filename);
+        try
+        {
+            ImageIO.write(image, "png", imageFile);
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
 
         System.out.format("Mean: %.3fus\n", mean);
         System.out.format("Std Dev: %.3fus\n", stdDev);
@@ -142,55 +162,38 @@ public class PingRunner
         System.exit(0);
     }
 
-      private void generateScatterPlot(double min, double max, double percentile, double mean, double stdDev)
+      private void generateScatterPlot(BufferedImage image, Graphics2D g,
+                                       int x, int y,
+                                       double min, double max, double percentile, double mean, double stdDev)
     {
-        BufferedImage image = new BufferedImage(500, 400, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g2 = image.createGraphics();
-        FontMetrics fm = g2.getFontMetrics();
-        String filename = transport + "_scatterplot_" + percentile + ".png";
-        File imageFile = new File(filename);
+        FontMetrics fm = g.getFontMetrics();
         int width = 390;
         int height = 370;
         int num = (int)((numMsgs - 1) * percentile);
         double newMax = sortedRTT[num];
-        double stepY = (double)(height / (double)(newMax));
+        double stepY = (double)(height / (double)(newMax - min));
         double stepX = (double)width / numMsgs;
 
-        g2.setColor(Color.white);
-        g2.fillRect(0, 0, 500, 400);
-        g2.setColor(Color.black);
+        g.setColor(Color.black);
 
-        g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-        g2.drawString("Latency ScatterPlot (microseconds)", 250 - fm.stringWidth("Latency ScatterPlot (microseconds)") / 2, 20);
-        g2.drawString("" + newMax, 10, 20);
-        g2.drawLine(100, 20, 100, 390);
-        g2.drawLine(100, 390, 490, 390);
+        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        g.drawString("Latency ScatterPlot (us) " + percentile + " percentile",
+                x + 100 + width / 2 - fm.stringWidth("Latency ScatterPlot (microseconds)" + percentile + " percentile") / 2,
+                y + 20);
+        g.drawString("" + newMax, x + 10, y + 20);
+        g.drawString("" + min, x + 10, y + 390);
+        g.drawLine(x + 100, y + 20, x + 100, y + 390);
+        g.drawLine(x + 100, y + 390, x + 490, y + 390);
 
-        g2.setColor(Color.red);
+        g.setColor(Color.red);
         for (int i = 0; i < numMsgs; i++)
         {
             if (tmp[i] < newMax)
             {
-                int posX = 100 + (int)(stepX * i);
-                int posY = 390 - (int)(stepY * (tmp[i]));
-                g2.fillRect(posX, posY, 1, 1);
+                int posX = x + 100 + (int)(stepX * i);
+                int posY = y + 390 - (int)(stepY * (tmp[i] - min));
+                g.fillRect(posX, posY, 1, 1);
             }
-        }
-
-        g2.setColor(Color.green);
-        g2.drawLine(100, 390 - (int)(stepY * mean), 490, 390 - (int)(stepY * mean));
-
-        g2.setColor(Color.blue);
-        g2.drawLine(100, 390 - (int)(stepY * (mean - stdDev)), 490, 390 - (int)(stepY * (mean - stdDev)));
-        g2.drawLine(100, 390 - (int)(stepY * (mean + stdDev)), 490, 390 - (int)(stepY * (mean + stdDev)));
-
-        try
-        {
-            ImageIO.write(image, "png", imageFile);
-        }
-        catch (Exception e)
-        {
-            e.printStackTrace();
         }
     }
 

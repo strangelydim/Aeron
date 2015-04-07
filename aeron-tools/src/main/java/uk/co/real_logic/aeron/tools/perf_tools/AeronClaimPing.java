@@ -30,7 +30,8 @@ public class AeronClaimPing extends AeronPing
             {
                 MutableDirectBuffer buffer = bufferClaim.buffer();
                 int offset = bufferClaim.offset();
-                buffer.wrap(buff, 0, buff.capacity());
+                buffer.putBytes(offset, buff, 0, buff.capacity());
+                //buffer.wrap(buff, 0, buff.capacity());
             }
             catch (Exception e)
             {
@@ -42,7 +43,6 @@ public class AeronClaimPing extends AeronPing
 
                 while (pongSub.poll(fragmentCountLimit) <= 0)
                 {
-                    idle.idle(0);
                 }
             }
         }

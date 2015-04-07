@@ -44,7 +44,6 @@ public class AeronPong implements PongImpl
     while (running.get())
     {
       int fragmentsRead = pingSub.poll(fragmentCountLimit);
-      idle.idle(fragmentsRead);
     }
     System.out.println("Done");
     shutdown();
@@ -68,7 +67,7 @@ public class AeronPong implements PongImpl
 
     while (!pongPub.offer(buffer, offset, length))
     {
-      idle.idle(0);
+
     }
   }
 }

@@ -4,8 +4,10 @@ import uk.co.real_logic.aeron.Aeron;
 import uk.co.real_logic.aeron.FragmentAssemblyAdapter;
 import uk.co.real_logic.aeron.Publication;
 import uk.co.real_logic.aeron.Subscription;
+import uk.co.real_logic.aeron.common.concurrent.logbuffer.BufferClaim;
 import uk.co.real_logic.aeron.common.concurrent.logbuffer.Header;
 import uk.co.real_logic.agrona.DirectBuffer;
+import uk.co.real_logic.agrona.MutableDirectBuffer;
 import uk.co.real_logic.agrona.concurrent.IdleStrategy;
 import uk.co.real_logic.agrona.concurrent.NoOpIdleStrategy;
 
@@ -30,7 +32,7 @@ public class AeronThroughputencySubscriber
     private IdleStrategy idle = new NoOpIdleStrategy();
     private boolean running = true;
     private long timestamps[] = new long[41111100];
-
+    private BufferClaim bufferClaim = null;
     public AeronThroughputencySubscriber()
     {
         ctx = new Aeron.Context();
@@ -39,6 +41,7 @@ public class AeronThroughputencySubscriber
         pub = aeron.addPublication(pubChannel, pubStreamId);
         sub = aeron.addSubscription(subChannel, subStreamId, dataHandler);
         fragmentCountLimit = 2;
+        bufferClaim = new BufferClaim();
 
         while (running)
         {
@@ -72,13 +75,30 @@ public class AeronThroughputencySubscriber
             running = false;
             return;
         }
-        else if (buffer.getByte(offset) == (byte)'p')
+        else
         {
-            timestamps[buffer.getInt(offset + 1)] = System.nanoTime();
-        }
-        while (!pub.offer(buffer, offset, length))
-        {
+            if (pub.tryClaim(length, bufferClaim))
+            {
+                try
+                {
+                    MutableDirectBuffer newBuffer = bufferClaim.buffer();
+                    int newOffset = bufferClaim.offset();
 
+                    newBuffer.putBytes(newOffset, buffer, offset, length);
+                }
+                catch (Exception e)
+                {
+                    e.printStackTrace();
+                }
+                finally
+                {
+                    bufferClaim.commit();
+                }
+            }
+            else
+            {
+                msgHandler(buffer, offset, length, header);
+            }
         }
     }
 

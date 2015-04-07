@@ -66,7 +66,6 @@ public class AeronPing implements PingImpl
 
         while (pongSub.poll(fragmentCountLimit) <= 0)
         {
-            idle.idle(0);
         }
     }
 
