@@ -37,6 +37,12 @@ ext {
 allprojects {
     apply plugin: 'eclipse'
     apply plugin: 'idea'
+    apply plugin: 'jacoco'
+}
+
+jacoco {
+  toolVersion = "0.7.1.201405082137"
+  reportsDir = file("$buildDir/codeCoverage")
 }
 
 buildscript {
@@ -102,6 +108,12 @@ subprojects {
                     println "Results: ${result.resultType} (${result.testCount} tests, ${result.successfulTestCount} successes, ${result.failedTestCount} failures, ${result.skippedTestCount} skipped)"
                 }
             }
+        }
+
+        jacoco {
+          append = false
+          destinationFile = file("$buildDir/jacoco/jacocoTest.exec")
+          classDumpFile = file("$buildDir/jacoco/classpathdumps")
         }
     }
 
