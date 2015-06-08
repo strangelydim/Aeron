@@ -32,7 +32,7 @@ import uk.co.real_logic.aeron.tools.SeedableThreadLocalRandom.SeedCallback;
 import uk.co.real_logic.agrona.concurrent.SigInt;
 import uk.co.real_logic.agrona.concurrent.UnsafeBuffer;
 
-public class PublisherTool implements SeedCallback, RateReporter.Stats, RateReporter.Callback
+public class PublisherToolImpl implements SeedCallback, RateReporter.Stats, RateReporter.Callback
 {
     static
     {
@@ -79,7 +79,7 @@ public class PublisherTool implements SeedCallback, RateReporter.Stats, RateRepo
 
     }
 
-    public PublisherTool(final PubSubOptions options)
+    public PublisherToolImpl(final PubSubOptions options)
     {
         this.options = options;
 
@@ -162,28 +162,6 @@ public class PublisherTool implements SeedCallback, RateReporter.Stats, RateRepo
         LOG.info(String.format("Exiting. Sent %d messages (%d bytes) total. %d verifiable and %d non-verifiable.",
             verifiableMessages + nonVerifiableMessages,
             bytesSent, verifiableMessages, nonVerifiableMessages));
-    }
-
-    public static void main(final String[] args)
-    {
-        final PubSubOptions opts = new PubSubOptions();
-        try
-        {
-            if (opts.parseArgs(args) != 0)
-            {
-                opts.printHelp(PublisherTool.APP_USAGE);
-                System.exit(0);
-            }
-        }
-
-        catch (final ParseException ex)
-        {
-            ex.printStackTrace();
-            opts.printHelp(PublisherTool.APP_USAGE);
-            System.exit(-1);
-        }
-        @SuppressWarnings("unused")
-        final PublisherTool app = new PublisherTool(opts);
     }
 
     /**

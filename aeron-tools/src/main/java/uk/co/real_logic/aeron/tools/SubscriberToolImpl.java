@@ -47,7 +47,7 @@ import uk.co.real_logic.agrona.concurrent.UnsafeBuffer;
 import static java.nio.ByteBuffer.allocateDirect;
 
 
-public class SubscriberTool
+public class SubscriberToolImpl
     implements RateReporter.Stats, SeedCallback, RateReporter.Callback
 {
     static
@@ -75,50 +75,34 @@ public class SubscriberTool
      * specific expansions in the future. */
     private static final int CHANNEL_NAME_MAX_LEN = 256;
 
-    public static void main(final String[] args)
+    public SubscriberToolImpl(final PubSubOptions options)
     {
-        final SubscriberTool subTool = new SubscriberTool();
-        try
-        {
-            if (1 == subTool.options.parseArgs(args))
-            {
-                subTool.options.printHelp("SubscriberTool");
-                System.exit(-1);
-            }
-        }
-        catch (final ParseException e)
-        {
-            LOG.severe(e.getMessage());
-            subTool.options.printHelp("SubscriberTool");
-            System.exit(-1);
-        }
-
-        sanityCheckOptions(subTool.options);
+        sanityCheckOptions(options);
 
         /* Set pRNG seed callback. */
-        SeedableThreadLocalRandom.setSeedCallback(subTool);
+        SeedableThreadLocalRandom.setSeedCallback(this);
 
         /* Shut down gracefully when we receive SIGINT. */
-        SigInt.register(() -> subTool.shuttingDown = true);
+        SigInt.register(() -> shuttingDown = true);
 
         /* Start embedded driver if requested. */
         MediaDriver driver = null;
-        if (subTool.options.useEmbeddedDriver())
+        if (options.useEmbeddedDriver())
         {
             driver = MediaDriver.launch();
         }
 
         /* Create and start receiving threads. */
-        final Thread subThreads[] = new Thread[subTool.options.threads()];
-        subTool.subscribers = new SubscriberThread[subTool.options.threads()];
-        for (int i = 0; i < subTool.options.threads(); i++)
+        final Thread subThreads[] = new Thread[options.threads()];
+        subscribers = new SubscriberThread[options.threads()];
+        for (int i = 0; i < options.threads(); i++)
         {
-            subTool.subscribers[i] = subTool.new SubscriberThread(i);
-            subThreads[i] = new Thread(subTool.subscribers[i]);
+            subscribers[i] = new SubscriberThread(i);
+            subThreads[i] = new Thread(subscribers[i]);
             subThreads[i].start();
         }
 
-        final RateReporter rateReporter = new RateReporter(subTool, subTool);
+        final RateReporter rateReporter = new RateReporter(this, this);
 
         /* Wait for threads to exit. */
         try
@@ -143,22 +127,22 @@ public class SubscriberTool
         try
         {
             /* Close any open output files. */
-            subTool.options.close();
+            options.close();
         }
         catch (final IOException e)
         {
             e.printStackTrace();
         }
 
-        final long verifiableMessages = subTool.verifiableMessages();
-        final long nonVerifiableMessages = subTool.nonVerifiableMessages();
-        final long bytesReceived = subTool.bytes();
+        final long verifiableMessages = verifiableMessages();
+        final long nonVerifiableMessages = nonVerifiableMessages();
+        final long bytesReceived = bytes();
         LOG.info(String.format(
-            "Exiting. Received %d messages (%d bytes) total. %d verifiable and %d non-verifiable.",
-            verifiableMessages + nonVerifiableMessages,
-            bytesReceived,
-            verifiableMessages,
-            nonVerifiableMessages));
+                "Exiting. Received %d messages (%d bytes) total. %d verifiable and %d non-verifiable.",
+                verifiableMessages + nonVerifiableMessages,
+                bytesReceived,
+                verifiableMessages,
+                nonVerifiableMessages));
     }
 
     /** Warn about options settings that might cause trouble. */
