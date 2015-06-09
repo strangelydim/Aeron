@@ -1,3 +1,5 @@
+import org.gradle.plugins.ide.eclipse.model.Classpath
+
 /*
  * Copyright 2015 Kaazing Corporation
  *

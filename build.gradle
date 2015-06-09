@@ -39,6 +39,7 @@ allprojects {
     apply plugin: 'idea'
     apply plugin: 'findbugs'
     apply plugin: 'jacoco'
+    apply plugin: 'pmd'
 }
 
 buildscript {
@@ -151,6 +152,15 @@ subprojects {
 
     findbugsTest.enabled = false
     findbugsMain {
+        ignoreFailures = true
+        reports {
+            html { enabled = false }
+            xml.enabled = !html.enabled
+        }
+    }
+
+    pmdTest.enabled = false
+    pmdMain {
         ignoreFailures = true
         reports {
             html { enabled = false }
