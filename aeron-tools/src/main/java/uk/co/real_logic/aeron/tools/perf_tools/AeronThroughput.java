@@ -97,7 +97,7 @@ public class AeronThroughput
 
         final int exp = (int)(Math.log(val) / Math.log(unit));
         final String pre = (si ? "kMGTPE" : "KMGTPE").charAt(exp - 1) + (si ? "" : "i");
-        return String.format("%.3f%s", val / Math.pow(unit, exp), pre);
+        return String.format("%.3f", val / Math.pow(unit, exp));
     }
 
     public static void main(final String[] args) throws Exception
@@ -140,9 +140,7 @@ public class AeronThroughput
                 }
             }
             final long stop = System.currentTimeMillis();
-            System.out.println("Average throughput for " +
-                MESSAGE_LENGTH + " byte messages was: " +
-                humanReadableCount(NUMBER_OF_MESSAGES / ((stop - start) / 1000), false) + " msgs/sec");
+            System.out.println(humanReadableCount(NUMBER_OF_MESSAGES / ((stop - start) / 1000), false));
 
             if (0 < LINGER_TIMEOUT_MS)
             {
