@@ -15,9 +15,12 @@
  */
 package uk.co.real_logic.aeron.logbuffer;
 
-import uk.co.real_logic.aeron.protocol.DataHeaderFlyweight;
 import uk.co.real_logic.agrona.concurrent.UnsafeBuffer;
 
+import static uk.co.real_logic.aeron.logbuffer.FrameDescriptor.FRAME_ALIGNMENT;
+import static uk.co.real_logic.aeron.logbuffer.FrameDescriptor.frameLengthVolatile;
+import static uk.co.real_logic.aeron.logbuffer.FrameDescriptor.isPaddingFrame;
+import static uk.co.real_logic.aeron.protocol.DataHeaderFlyweight.HEADER_LENGTH;
 import static uk.co.real_logic.agrona.BitUtil.align;
 
 /**
@@ -27,17 +30,15 @@ import static uk.co.real_logic.agrona.BitUtil.align;
  */
 public final class TermScanner
 {
-    private int padding;
-
     /**
      * Scan the term buffer for availability of new messages from a given offset up to a maxLength of bytes.
      *
      * @param termBuffer to be scanned for new messages
      * @param offset     at which the scan should begin.
      * @param maxLength  in bytes of how much should be scanned.
-     * @return number of bytes available
+     * @return resulting status of the scan which packs the available bytes and padding into a long.
      */
-    public int scanForAvailability(final UnsafeBuffer termBuffer, final int offset, int maxLength)
+    public static long scanForAvailability(final UnsafeBuffer termBuffer, final int offset, int maxLength)
     {
         maxLength = Math.min(maxLength, termBuffer.capacity() - offset);
         int available = 0;
@@ -46,17 +47,17 @@ public final class TermScanner
         do
         {
             final int frameOffset = offset + available;
-            final int frameLength = FrameDescriptor.frameLengthVolatile(termBuffer, frameOffset);
+            final int frameLength = frameLengthVolatile(termBuffer, frameOffset);
             if (frameLength <= 0)
             {
                 break;
             }
 
-            int alignedFrameLength = align(frameLength, FrameDescriptor.FRAME_ALIGNMENT);
-            if (FrameDescriptor.isPaddingFrame(termBuffer, frameOffset))
+            int alignedFrameLength = align(frameLength, FRAME_ALIGNMENT);
+            if (isPaddingFrame(termBuffer, frameOffset))
             {
-                padding = alignedFrameLength - DataHeaderFlyweight.HEADER_LENGTH;
-                alignedFrameLength = DataHeaderFlyweight.HEADER_LENGTH;
+                padding = alignedFrameLength - HEADER_LENGTH;
+                alignedFrameLength = HEADER_LENGTH;
             }
 
             available += alignedFrameLength;
@@ -70,18 +71,40 @@ public final class TermScanner
         }
         while ((available + padding) < maxLength);
 
-        this.padding = padding;
+        return scanOutcome(padding, available);
+    }
 
-        return available;
+    /**
+     * Pack the values for available and padding into a long for returning on the stack.
+     *
+     * @param padding   value to be packed.
+     * @param available value to be packed.
+     * @return a long with both ints packed into it.
+     */
+    public static long scanOutcome(final int padding, final int available)
+    {
+        return ((long)padding << 32) | available;
+    }
+
+    /**
+     * The number of bytes that are available to be read after a scan.
+     *
+     * @param scanOutcome into which the padding value has been packed.
+     * @return the count of bytes that are available to be read.
+     */
+    public static int available(final long scanOutcome)
+    {
+        return (int)scanOutcome;
     }
 
     /**
      * The count of bytes that should be added for padding to the position on top of what is available
      *
+     * @param scanOutcome into which the padding value has been packed.
      * @return the count of bytes that should be added for padding to the position on top of what is available.
      */
-    public int padding()
+    public static int padding(final long scanOutcome)
     {
-        return padding;
+        return (int)(scanOutcome >>> 32);
     }
 }

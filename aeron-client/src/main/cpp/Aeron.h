@@ -20,6 +20,7 @@
 #include <util/Exceptions.h>
 #include <iostream>
 #include <thread>
+#include <random>
 #include <concurrent/logbuffer/TermReader.h>
 #include <util/MemoryMappedFile.h>
 #include <concurrent/broadcast/CopyBroadcastReceiver.h>
@@ -50,7 +51,7 @@ public:
 
         if (0 == sessionIdToRequest)
         {
-            // TODO: generate random sessionIdToRequest
+            sessionIdToRequest = m_sessionIdDistribution(m_randomEngine);
         }
 
         return m_conductor.addPublication(channel, streamId, sessionIdToRequest);
@@ -61,9 +62,9 @@ public:
         return m_conductor.findPublication(id);
     }
 
-    inline std::int64_t addSubscription(const std::string& channel, std::int32_t streamId, logbuffer::fragment_handler_t & handler)
+    inline std::int64_t addSubscription(const std::string& channel, std::int32_t streamId)
     {
-        return m_conductor.addSubscription(channel, streamId, handler);
+        return m_conductor.addSubscription(channel, streamId);
     }
 
     inline std::shared_ptr<Subscription> findSubscription(std::int64_t id)
@@ -71,7 +72,17 @@ public:
         return m_conductor.findSubscription(id);
     }
 
+    inline bool isPublicationClosed(std::int64_t id)
+    {
+        // TODO:
+        return true;
+    }
+
 private:
+    std::random_device m_randomDevice;
+    std::default_random_engine m_randomEngine;
+    std::uniform_int_distribution<std::int32_t> m_sessionIdDistribution;
+
     Context& m_context;
 
     MemoryMappedFile::ptr_t m_cncBuffer;

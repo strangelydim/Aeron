@@ -17,12 +17,13 @@ package uk.co.real_logic.aeron.driver;
 
 import uk.co.real_logic.aeron.CncFileDescriptor;
 import uk.co.real_logic.aeron.CommonContext;
-import uk.co.real_logic.aeron.driver.event.EventConfiguration;
-import uk.co.real_logic.aeron.driver.event.EventLogger;
 import uk.co.real_logic.aeron.driver.buffer.RawLogFactory;
 import uk.co.real_logic.aeron.driver.cmd.DriverConductorCmd;
 import uk.co.real_logic.aeron.driver.cmd.ReceiverCmd;
 import uk.co.real_logic.aeron.driver.cmd.SenderCmd;
+import uk.co.real_logic.aeron.driver.event.EventConfiguration;
+import uk.co.real_logic.aeron.driver.event.EventLogger;
+import uk.co.real_logic.aeron.driver.exceptions.ConfigurationException;
 import uk.co.real_logic.aeron.driver.media.TransportPoller;
 import uk.co.real_logic.agrona.IoUtil;
 import uk.co.real_logic.agrona.LangUtil;
@@ -33,8 +34,11 @@ import uk.co.real_logic.agrona.concurrent.ringbuffer.ManyToOneRingBuffer;
 import uk.co.real_logic.agrona.concurrent.ringbuffer.RingBuffer;
 
 import java.io.File;
+import java.io.IOException;
+import java.net.StandardSocketOptions;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
+import java.nio.channels.DatagramChannel;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -43,14 +47,13 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import static java.lang.Boolean.getBoolean;
-import static java.lang.Integer.getInteger;
 import static uk.co.real_logic.aeron.driver.Configuration.*;
 import static uk.co.real_logic.agrona.IoUtil.deleteIfExists;
 import static uk.co.real_logic.agrona.IoUtil.mapNewFile;
 
 /**
  * Main class for JVM-based media driver
- *
+ * <p>
  * Usage:
  * <code>
  * $ java -jar aeron-driver.jar
@@ -68,7 +71,9 @@ import static uk.co.real_logic.agrona.IoUtil.mapNewFile;
 public final class MediaDriver implements AutoCloseable
 {
 
-    /** Attempt to delete directories on exit */
+    /**
+     * Attempt to delete directories on exit
+     */
     public static final String DIRS_DELETE_ON_EXIT_PROP_NAME = "aeron.dir.delete.on.exit";
 
     private final File parentDirectory;
@@ -102,6 +107,8 @@ public final class MediaDriver implements AutoCloseable
         parentDirectory = new File(ctx.dirName());
 
         ensureDirectoriesAreRecreated();
+
+        validateSufficientSocketBufferLengths(ctx);
 
         ctx.unicastSenderFlowControl(Configuration::unicastFlowControlStrategy)
             .multicastSenderFlowControl(Configuration::multicastFlowControlStrategy)
@@ -137,7 +144,7 @@ public final class MediaDriver implements AutoCloseable
             case SHARED_NETWORK:
                 runners = Arrays.asList(
                     new AgentRunner(ctx.sharedNetworkIdleStrategy, ctx.exceptionConsumer(), driverExceptions,
-                                    new CompositeAgent(sender, receiver)),
+                        new CompositeAgent(sender, receiver)),
                     new AgentRunner(ctx.conductorIdleStrategy, ctx.exceptionConsumer(), driverExceptions, driverConductor)
                 );
                 break;
@@ -157,6 +164,7 @@ public final class MediaDriver implements AutoCloseable
     /**
      * Launch an isolated MediaDriver embedded in the current process with a generated dirName that can be retrieved
      * by calling contextDirName.
+     *
      * @return the newly started MediaDriver.
      */
     public static MediaDriver launchEmbedded()
@@ -221,6 +229,7 @@ public final class MediaDriver implements AutoCloseable
 
     /**
      * Used to access the configured dirName for this MediaDriver Context typically after the launchIsolated method
+     *
      * @return the context dirName
      */
     public String contextDirName()
@@ -245,6 +254,49 @@ public final class MediaDriver implements AutoCloseable
             });
 
         return this;
+    }
+
+    private static void validateSufficientSocketBufferLengths(final Context ctx)
+    {
+        try (final DatagramChannel probe = DatagramChannel.open())
+        {
+            final int defaultSoSndbuf = probe.getOption(StandardSocketOptions.SO_SNDBUF);
+
+            probe.setOption(StandardSocketOptions.SO_SNDBUF, Integer.MAX_VALUE);
+            final int maxSoSndbuf = probe.getOption(StandardSocketOptions.SO_SNDBUF);
+
+            if (maxSoSndbuf < Configuration.SOCKET_SNDBUF_LENGTH)
+            {
+                System.err.format(
+                    "WARNING: Could not get desired SO_SNDBUF: attempted=%d, actual=%d\n",
+                    Configuration.SOCKET_SNDBUF_LENGTH, maxSoSndbuf);
+            }
+
+            probe.setOption(StandardSocketOptions.SO_RCVBUF, Integer.MAX_VALUE);
+            final int maxSoRcvbuf = probe.getOption(StandardSocketOptions.SO_RCVBUF);
+
+            if (maxSoRcvbuf < Configuration.SOCKET_RCVBUF_LENGTH)
+            {
+                System.err.format(
+                    "WARNING: Could not get desired SO_RCVBUF: attempted=%d, actual=%d\n",
+                    Configuration.SOCKET_RCVBUF_LENGTH, maxSoRcvbuf);
+            }
+
+            final int soSndbuf =
+                (0 == Configuration.SOCKET_SNDBUF_LENGTH) ? defaultSoSndbuf : Configuration.SOCKET_SNDBUF_LENGTH;
+
+            if (ctx.mtuLength() > soSndbuf)
+            {
+                throw new ConfigurationException(
+                    String.format(
+                        "MTU greater than socket SO_SNDBUF: mtuLength=%d, SO_SNDBUF=%d", ctx.mtuLength(), soSndbuf));
+            }
+        }
+        catch (final IOException ex)
+        {
+            throw new RuntimeException(
+                String.format("probe socket: %s", ex.toString()), ex);
+        }
     }
 
     private void ensureDirectoriesAreRecreated()
@@ -331,6 +383,7 @@ public final class MediaDriver implements AutoCloseable
             dataLossSeed(Configuration.dataLossSeed());
             controlLossRate(Configuration.controlLossRate());
             controlLossSeed(Configuration.controlLossSeed());
+            mtuLength(Configuration.MTU_LENGTH);
 
             eventConsumer = System.out::println;
             eventBufferLength = EventConfiguration.bufferLength();
@@ -355,8 +408,6 @@ public final class MediaDriver implements AutoCloseable
                 {
                     threadingMode = Configuration.threadingMode();
                 }
-
-                mtuLength(getInteger(MTU_LENGTH_PROP_NAME, MTU_LENGTH_DEFAULT));
 
                 final ByteBuffer eventByteBuffer = ByteBuffer.allocateDirect(eventBufferLength);
 
@@ -670,6 +721,7 @@ public final class MediaDriver implements AutoCloseable
 
         /**
          * Set whether or not this application will attempt to delete the Aeron directories when exiting.
+         *
          * @param dirsDeleteOnExit Attempt deletion.
          * @return this Object for method chaining.
          */
@@ -877,6 +929,7 @@ public final class MediaDriver implements AutoCloseable
 
         /**
          * Get whether or not this application will attempt to delete the Aeron directories when exiting.
+         *
          * @return true when directories will be deleted, otherwise false.
          */
         public boolean dirsDeleteOnExit()
@@ -968,6 +1021,7 @@ public final class MediaDriver implements AutoCloseable
             {
                 dataLossGenerator(Configuration.createLossGenerator(dataLossRate, dataLossSeed));
             }
+
             if (null == controlLossGenerator)
             {
                 controlLossGenerator(Configuration.createLossGenerator(controlLossRate, controlLossSeed));

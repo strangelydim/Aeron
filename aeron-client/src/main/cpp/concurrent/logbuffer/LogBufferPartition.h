@@ -38,15 +38,10 @@ public:
         return m_metaDataBuffer;
     }
 
-    inline util::index_t capacity() const
-    {
-        return m_capacity;
-    }
-
     inline void clean()
     {
-        m_termBuffer.setMemory(0, m_termBuffer.getCapacity(), 0);
-        m_metaDataBuffer.setMemory(0, m_metaDataBuffer.getCapacity(), 0);
+        m_termBuffer.setMemory(0, m_termBuffer.capacity(), 0);
+        m_metaDataBuffer.setMemory(0, m_metaDataBuffer.capacity(), 0);
         statusOrdered(LogBufferDescriptor::CLEAN);
     }
 
@@ -62,7 +57,8 @@ public:
 
     inline std::int32_t tailVolatile()
     {
-        return std::min(m_metaDataBuffer.getInt32Volatile(LogBufferDescriptor::TERM_TAIL_COUNTER_OFFSET), m_capacity);
+        return std::min(m_metaDataBuffer.getInt32Volatile(LogBufferDescriptor::TERM_TAIL_COUNTER_OFFSET),
+            m_termBuffer.capacity());
     }
 
     inline std::int32_t rawTailVolatile()
@@ -72,23 +68,21 @@ public:
 
     inline std::int32_t tail()
     {
-        return std::min(m_metaDataBuffer.getInt32(LogBufferDescriptor::TERM_TAIL_COUNTER_OFFSET), m_capacity);
+        return std::min(m_metaDataBuffer.getInt32(LogBufferDescriptor::TERM_TAIL_COUNTER_OFFSET),
+            m_termBuffer.capacity());
     }
 
 protected:
-    inline LogBufferPartition(AtomicBuffer& termBuffer, AtomicBuffer& metaDataBuffer)
-        : m_termBuffer(termBuffer), m_metaDataBuffer(metaDataBuffer)
+    inline LogBufferPartition(AtomicBuffer& termBuffer, AtomicBuffer& metaDataBuffer) :
+        m_termBuffer(termBuffer), m_metaDataBuffer(metaDataBuffer)
     {
         LogBufferDescriptor::checkTermBuffer(termBuffer);
         LogBufferDescriptor::checkMetaDataBuffer(metaDataBuffer);
-
-        m_capacity = termBuffer.getCapacity();
     }
 
 private:
     AtomicBuffer& m_termBuffer;
     AtomicBuffer& m_metaDataBuffer;
-    util::index_t m_capacity;
 };
 
 }}}

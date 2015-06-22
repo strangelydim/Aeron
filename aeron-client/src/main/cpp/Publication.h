@@ -43,7 +43,7 @@ public:
         std::int64_t registrationId,
         std::int32_t streamId,
         std::int32_t sessionId,
-        ReadablePosition<UnsafeBufferPosition>& publicationLimit,
+        UnsafeBufferPosition& publicationLimit,
         LogBuffers& buffers);
 
     virtual ~Publication();
@@ -91,7 +91,7 @@ public:
         TermAppender* appender = m_appenders[activeIndex].get();
         const std::int32_t currentTail = appender->rawTailVolatile();
         const std::int64_t position = LogBufferDescriptor::computePosition(activeTermId, currentTail, m_positionBitsToShift, initialTermId);
-        const std::int32_t capacity = appender->termBuffer().getCapacity();
+        const std::int32_t capacity = appender->termBuffer().capacity();
 
         const std::int64_t limit = m_publicationLimit.getVolatile();
         std::int64_t newPosition = limit > 0 ? PUBLICATION_BACK_PRESSURE : PUBLICATION_NOT_CONNECTED;
@@ -107,7 +107,7 @@ public:
 
     inline std::int64_t offer(concurrent::AtomicBuffer& buffer)
     {
-        return offer(buffer, 0, buffer.getCapacity());
+        return offer(buffer, 0, buffer.capacity());
     }
 
     inline std::int64_t tryClaim(util::index_t length, concurrent::logbuffer::BufferClaim& bufferClaim)
@@ -118,7 +118,7 @@ public:
         TermAppender* appender = m_appenders[activeIndex].get();
         const std::int32_t currentTail = appender->rawTailVolatile();
         const std::int64_t position = LogBufferDescriptor::computePosition(activeTermId, currentTail, m_positionBitsToShift, initialTermId);
-        const std::int32_t capacity = appender->termBuffer().getCapacity();
+        const std::int32_t capacity = appender->termBuffer().capacity();
 
         const std::int64_t limit = m_publicationLimit.getVolatile();
         std::int64_t newPosition = limit > 0 ? PUBLICATION_BACK_PRESSURE : PUBLICATION_NOT_CONNECTED;
@@ -138,7 +138,7 @@ private:
     std::int64_t m_registrationId;
     std::int32_t m_streamId;
     std::int32_t m_sessionId;
-    ReadablePosition<UnsafeBufferPosition>& m_publicationLimit;
+    ReadablePosition<UnsafeBufferPosition> m_publicationLimit;
 
     AtomicBuffer& m_logMetaDataBuffer;
     std::unique_ptr<TermAppender> m_appenders[3];
@@ -155,13 +155,12 @@ private:
             {
                 const std::int32_t newTermId = activeTermId + 1;
                 const int nextIndex = LogBufferDescriptor::nextPartitionIndex(activeIndex);
+                const int nextNextIndex = LogBufferDescriptor::nextPartitionIndex(nextIndex);
 
-                m_appenders[nextIndex]->defaultHeader().putInt32(DataHeader::TERM_ID_FIELD_OFFSET, newTermId);
-                const int previousIndex = LogBufferDescriptor::previousPartitionIndex(activeIndex);
-                TermAppender* previousAppender = m_appenders[previousIndex].get();
+                LogBufferDescriptor::defaultHeaderTermId(m_logMetaDataBuffer, nextIndex, newTermId);
 
-                previousAppender->defaultHeader().putInt32(DataHeader::TERM_ID_FIELD_OFFSET, newTermId + 1);
-                previousAppender->statusOrdered(LogBufferDescriptor::NEEDS_CLEANING);
+                LogBufferDescriptor::defaultHeaderTermId(m_logMetaDataBuffer, nextNextIndex, newTermId + 1);
+                m_appenders[nextNextIndex]->statusOrdered(LogBufferDescriptor::NEEDS_CLEANING);
                 LogBufferDescriptor::activeTermId(m_logMetaDataBuffer, newTermId);
             }
             // fall through
@@ -172,7 +171,6 @@ private:
 
             default:
                 newPosition = (position - currentTail) + nextOffset;
-                break;
         }
 
         return newPosition;

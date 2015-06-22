@@ -33,32 +33,20 @@ public class Header
     /**
      * Default constructor to enable inheritance.
      */
-    public Header()
+    protected Header()
     {
-    }
-
-    /**
-     * Construct a header that references a buffer for the log.
-     *
-     * @param termBuffer for the log.
-     */
-    public Header(final UnsafeBuffer termBuffer)
-    {
-        this.buffer = termBuffer;
-        this.positionBitsToShift = Integer.numberOfTrailingZeros(termBuffer.capacity());
     }
 
     /**
      * Construct a header that references a buffer for the log.
      *
      * @param initialTermId this stream started at.
-     * @param termBuffer    for the log.
+     * @param termCapacity for each term in the log buffer.
      */
-    public Header(final int initialTermId, final UnsafeBuffer termBuffer)
+    public Header(final int initialTermId, final int termCapacity)
     {
         this.initialTermId = initialTermId;
-        this.buffer = termBuffer;
-        this.positionBitsToShift = Integer.numberOfTrailingZeros(termBuffer.capacity());
+        this.positionBitsToShift = Integer.numberOfTrailingZeros(termCapacity);
     }
 
     /**

@@ -20,18 +20,22 @@
 namespace aeron {
 
 Subscription::Subscription(
-    ClientConductor &conductor, std::int64_t correlationId, const std::string &channel, std::int32_t streamId) :
+    ClientConductor &conductor, std::int64_t registrationId, const std::string &channel, std::int32_t streamId) :
     m_conductor(conductor),
     m_channel(channel),
-    m_correlationId(correlationId),
-    m_streamId(streamId)
+    m_registrationId(registrationId),
+    m_streamId(streamId),
+    m_connections(nullptr),
+    m_connectionsLength(0)
 {
 
 }
 
 Subscription::~Subscription()
 {
-    m_conductor.releaseSubscription(m_correlationId);
+    m_conductor.releaseSubscription(m_registrationId);
+
+    // TODO: clean out connections and have client conductor linger them
 }
 
 }

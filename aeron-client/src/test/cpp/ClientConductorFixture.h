@@ -38,6 +38,7 @@ using namespace aeron;
 #define COUNTER_VALUES_BUFFER_LENGTH (1024 * 1024)
 
 static const long DRIVER_TIMEOUT_MS = 10 * 1000;
+static const long RESOURCE_LINGER_TIMEOUT_MS = 5 * 1000;
 
 typedef std::array<std::uint8_t, MANY_TO_ONE_RING_BUFFER_LENGTH> many_to_one_ring_buffer_t;
 typedef std::array<std::uint8_t, BROADCAST_BUFFER_LENGTH> broadcast_buffer_t;
@@ -48,6 +49,14 @@ void onNewPub(const std::string&, std::int32_t, std::int32_t, std::int64_t)
 }
 
 void onNewSub(const std::string&, std::int32_t, std::int64_t)
+{
+}
+
+void onNewConn(const std::string&, std::int32_t, std::int32_t, std::int64_t, const std::string&)
+{
+}
+
+void onInactive(const std::string&, std::int32_t, std::int32_t, std::int64_t)
 {
 }
 
@@ -74,7 +83,10 @@ public:
             m_counterValuesBuffer,
             onNewPub,
             onNewSub,
-            DRIVER_TIMEOUT_MS)
+            onNewConn,
+            onInactive,
+            DRIVER_TIMEOUT_MS,
+            RESOURCE_LINGER_TIMEOUT_MS)
     {
         m_toDriver.fill(0);
         m_toClients.fill(0);

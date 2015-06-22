@@ -22,6 +22,7 @@
 #include <util/BitUtil.h>
 #include <concurrent/AtomicBuffer.h>
 #include "FrameDescriptor.h"
+#include "DataFrameHeader.h"
 
 namespace aeron { namespace concurrent { namespace logbuffer {
 
@@ -59,7 +60,7 @@ static const int PARTITION_COUNT = 3;
 
 static const util::index_t TERM_TAIL_COUNTER_OFFSET = (util::BitUtil::CACHE_LINE_LENGTH * 2);
 static const util::index_t TERM_STATUS_OFFSET = (util::BitUtil::CACHE_LINE_LENGTH * 2) * 2;
-static const util::index_t TERM_META_DATA_LENGTH = (util::BitUtil::CACHE_LINE_LENGTH * 2) * 4;
+static const util::index_t TERM_META_DATA_LENGTH = (util::BitUtil::CACHE_LINE_LENGTH * 2) * 3;
 
 static const util::index_t LOG_META_DATA_SECTION_INDEX = PARTITION_COUNT * 2;
 
@@ -117,7 +118,7 @@ static const util::index_t LOG_META_DATA_LENGTH = sizeof(LogMetaDataDefn) + (LOG
 
 inline static void checkTermBuffer(AtomicBuffer &buffer)
 {
-    const util::index_t capacity = buffer.getCapacity();
+    const util::index_t capacity = buffer.capacity();
     if (capacity < TERM_MIN_LENGTH)
     {
         throw util::IllegalStateException(
@@ -135,7 +136,7 @@ inline static void checkTermBuffer(AtomicBuffer &buffer)
 
 inline static void checkMetaDataBuffer(AtomicBuffer &buffer)
 {
-    const util::index_t capacity = buffer.getCapacity();
+    const util::index_t capacity = buffer.capacity();
     if (capacity < TERM_META_DATA_LENGTH)
     {
         throw util::IllegalStateException(
@@ -164,32 +165,27 @@ inline static std::int32_t mtuLength(AtomicBuffer& logMetaDataBuffer)
     return logMetaDataBuffer.getInt32(LOG_MTU_LENGTH_OFFSET);
 }
 
+// compiler should optimize for mod 3. But if not, then do it by hand for these via BitUtil::fastMod3().
+
 inline static int nextPartitionIndex(int currentIndex)
 {
-    int nextIndex = currentIndex + 1;
-    if (nextIndex == PARTITION_COUNT)
-    {
-        nextIndex = 0;
-    }
-
-    return nextIndex;
+    return (currentIndex + 1) % PARTITION_COUNT;
 }
 
 inline static int previousPartitionIndex(int currentIndex)
 {
-    if (0 == currentIndex)
-    {
-        return PARTITION_COUNT - 1;
-    }
-
-    return currentIndex - 1;
+    return (currentIndex + (PARTITION_COUNT - 1)) % PARTITION_COUNT;
 }
 
 inline static int indexByTerm(std::int32_t initialTermId, std::int32_t activeTermId)
 {
-    // compiler should optimize for mod 3. But if not, then do it by hand.
     // return util::BitUtil::fastMod3(activeTermId - initialTermId)
     return (activeTermId - initialTermId) % PARTITION_COUNT;
+}
+
+inline static int indexByPosition(std::int64_t position, std::int32_t positionBitsToShift)
+{
+    return (int)(((std::uint64_t)position >> positionBitsToShift) % PARTITION_COUNT);
 }
 
 inline static std::int64_t computePosition(
@@ -211,9 +207,15 @@ inline static std::int64_t computeTermLength(std::int64_t logLength)
     return (logLength - metaDataSectionLength) / 3;
 }
 
-inline static std::uint8_t* defaultFrameHeader(AtomicBuffer& logMetaDataBuffer, int index)
+inline static std::uint8_t* defaultFrameHeader(AtomicBuffer& logMetaDataBuffer, int partitionIndex)
 {
-    return logMetaDataBuffer.getBuffer() + LOG_DEFAULT_FRAME_HEADERS_OFFSET + (index * LOG_DEFAULT_FRAME_HEADER_MAX_LENGTH);
+    return logMetaDataBuffer.buffer() + LOG_DEFAULT_FRAME_HEADERS_OFFSET + (partitionIndex * LOG_DEFAULT_FRAME_HEADER_MAX_LENGTH);
+}
+
+inline static void defaultHeaderTermId(AtomicBuffer& logMetaDataBuffer, int partitionIndex, std::int32_t termId)
+{
+    const util::index_t headerOffset = LOG_DEFAULT_FRAME_HEADERS_OFFSET + (partitionIndex * LOG_DEFAULT_FRAME_HEADER_MAX_LENGTH);
+    logMetaDataBuffer.putInt32(headerOffset + DataFrameHeader::TERM_ID_FIELD_OFFSET, termId);
 }
 
 };

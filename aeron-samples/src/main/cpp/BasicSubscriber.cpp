@@ -21,7 +21,6 @@
 #include <thread>
 #include "Configuration.h"
 #include <Aeron.h>
-#include <array>
 
 using namespace aeron::util;
 using namespace aeron;
@@ -37,19 +36,16 @@ static const char optHelp     = 'h';
 static const char optPrefix   = 'p';
 static const char optChannel  = 'c';
 static const char optStreamId = 's';
-static const char optMessages = 'm';
-static const char optLinger   = 'l';
+
+static const std::chrono::duration<long, std::milli> IDLE_SLEEP_MS(1);
+static const int FRAGMENTS_LIMIT = 10;
 
 struct Settings
 {
     std::string dirPrefix = "";
     std::string channel = samples::configuration::DEFAULT_CHANNEL;
     std::int32_t streamId = samples::configuration::DEFAULT_STREAM_ID;
-    int numberOfMessages = samples::configuration::DEFAULT_NUMBER_OF_MESSAGES;
-    int lingerTimeoutMs = samples::configuration::DEFAULT_LINGER_TIMEOUT_MS;
 };
-
-typedef std::array<std::uint8_t, 256> buffer_t;
 
 Settings parseCmdLine(CommandOptionParser& cp, int argc, char** argv)
 {
@@ -65,10 +61,18 @@ Settings parseCmdLine(CommandOptionParser& cp, int argc, char** argv)
     s.dirPrefix = cp.getOption(optPrefix).getParam(0, s.dirPrefix);
     s.channel = cp.getOption(optChannel).getParam(0, s.channel);
     s.streamId = cp.getOption(optStreamId).getParamAsInt(0, 1, INT32_MAX, s.streamId);
-    s.numberOfMessages = cp.getOption(optMessages).getParamAsInt(0, 0, INT32_MAX, s.numberOfMessages);
-    s.lingerTimeoutMs = cp.getOption(optLinger).getParamAsInt(0, 0, 60 * 60 * 1000, s.lingerTimeoutMs);
 
     return s;
+}
+
+fragment_handler_t printStringMessage()
+{
+    return [&](AtomicBuffer& buffer, util::index_t offset, util::index_t length, Header& header)
+    {
+        std::cout << "Message to stream " << header.streamId() << " from session " << header.sessionId();
+        std::cout << "(" << length << "@" << offset << ") <<";
+        std::cout << std::string((char *)buffer.buffer() + offset, (unsigned long)length) << ">>" << std::endl;
+    };
 }
 
 int main(int argc, char** argv)
@@ -78,8 +82,6 @@ int main(int argc, char** argv)
     cp.addOption(CommandOption (optPrefix,   1, 1, "dir             Prefix directory for aeron driver."));
     cp.addOption(CommandOption (optChannel,  1, 1, "channel         Channel."));
     cp.addOption(CommandOption (optStreamId, 1, 1, "streamId        Stream ID."));
-    cp.addOption(CommandOption (optMessages, 1, 1, "number          Number of Messages."));
-    cp.addOption(CommandOption (optLinger,   1, 1, "milliseconds    Linger timeout in milliseconds."));
 
     signal (SIGINT, sigIntHandler);
 
@@ -87,7 +89,7 @@ int main(int argc, char** argv)
     {
         Settings settings = parseCmdLine(cp, argc, argv);
 
-        std::cout << "Publishing to channel " << settings.channel << " on Stream ID " << settings.streamId << std::endl;
+        std::cout << "Subscribing to channel " << settings.channel << " on Stream ID " << settings.streamId << std::endl;
 
         aeron::Context context;
 
@@ -96,63 +98,53 @@ int main(int argc, char** argv)
             context.aeronDir(settings.dirPrefix);
         }
 
-        context.newPublicationHandler(
-            [](const std::string& channel, std::int32_t streamId, std::int32_t sessionId, std::int64_t correlationId)
+        context.newSubscriptionHandler(
+            [](const std::string& channel, std::int32_t streamId, std::int64_t correlationId)
             {
-                std::cout << "Publication: " << channel << " " << correlationId << ":" << streamId << ":" << sessionId << std::endl;
+                std::cout << "Subscription: " << channel << " " << correlationId << ":" << streamId << std::endl;
+            });
+
+        context.newConnectionHandler([](
+            const std::string& channel,
+            std::int32_t streamId,
+            std::int32_t sessionId,
+            std::int64_t joiningPosition,
+            const std::string& sourceIdentity)
+            {
+                std::cout << "New connection on " << channel << " streamId=" << streamId << " sessionId=" << sessionId;
+                std::cout << " at position=" << joiningPosition << " from " << sourceIdentity << std::endl;
+            });
+
+        context.inactiveConnectionHandler(
+            [](const std::string& channel, std::int32_t streamId, std::int32_t sessionId, std::int64_t position)
+            {
+                std::cout << "Inactive connection on " << channel << "streamId=" << streamId << " sessionId=" << sessionId;
+                std::cout << " at position=" << position << std::endl;
             });
 
         Aeron aeron(context);
 
-        // add the publication to start the process
-        std::int64_t id = aeron.addPublication(settings.channel, settings.streamId);
+        // add the subscription to start the process
+        std::int64_t id = aeron.addSubscription(settings.channel, settings.streamId);
 
-        std::shared_ptr<Publication> publication = aeron.findPublication(id);
-        // wait for the publication to be valid
-        while (!publication)
+        std::shared_ptr<Subscription> subscription = aeron.findSubscription(id);
+        // wait for the subscription to be valid
+        while (!subscription)
         {
             std::this_thread::yield();
-            publication = aeron.findPublication(id);
+            subscription = aeron.findSubscription(id);
         }
 
-        AERON_DECL_ALIGNED(buffer_t buffer, 16);
-        concurrent::AtomicBuffer srcBuffer(&buffer[0], buffer.size());
-        char message[256];
+        fragment_handler_t handler = printStringMessage();
+        SleepingIdleStrategy idleStrategy(IDLE_SLEEP_MS);
 
-        for (int i = 0; i < settings.numberOfMessages && running; i++)
+        while (running)
         {
-#if _MSC_VER
-            const int messageLen = ::sprintf_s(message, sizeof(message), "Hello World! %d", i);
-#else
-            const int messageLen = ::snprintf(message, sizeof(message), "Hello World! %d", i);
-#endif
+            const int fragmentsRead = subscription->poll(handler, FRAGMENTS_LIMIT);
 
-            srcBuffer.putBytes(0, reinterpret_cast<std::uint8_t *>(message), messageLen);
-
-            std::cout << "offering " << i << "/" << settings.numberOfMessages;
-            std::cout.flush();
-
-            const std::int64_t result = publication->offer(srcBuffer, 0, messageLen);
-
-            if (result < 0)
-            {
-                std::cout << " ah?!" << std::endl;
-            }
-            else
-            {
-                std::cout << " yay!" << std::endl;
-            }
-
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+            idleStrategy.idle(fragmentsRead);
         }
 
-        std::cout << "Done sending." << std::endl;
-
-        if (settings.lingerTimeoutMs > 0)
-        {
-            std::cout << "Lingering for " << settings.lingerTimeoutMs << " milliseconds." << std::endl;
-            std::this_thread::sleep_for(std::chrono::milliseconds(settings.lingerTimeoutMs));
-        }
     }
     catch (CommandOptionException& e)
     {

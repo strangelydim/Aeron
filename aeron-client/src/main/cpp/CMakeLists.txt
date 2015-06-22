@@ -28,6 +28,7 @@ SET(SOURCE
 SET(HEADERS
     ClientConductor.h
     CncFileDescriptor.h
+    Connection.h
     Context.h
     Aeron.h
     Publication.h
@@ -36,7 +37,7 @@ SET(HEADERS
     DriverListenerAdapter.h
     LogBuffers.h
     command/ConnectionMessageFlyweight.h
-    command/ConnectionReadyFlyweight.h
+    command/ConnectionBuffersReadyFlyweight.h
     command/ControlProtocolEvents.h
     command/CorrelatedMessageFlyweight.h
     command/Flyweight.h
@@ -59,6 +60,7 @@ SET(HEADERS
     concurrent/broadcast/CopyBroadcastReceiver.h
     concurrent/broadcast/RecordDescriptor.h
     concurrent/logbuffer/BufferClaim.h
+    concurrent/logbuffer/DataFrameHeader.h
     concurrent/logbuffer/FrameDescriptor.h
     concurrent/logbuffer/Header.h
     concurrent/logbuffer/TermAppender.h

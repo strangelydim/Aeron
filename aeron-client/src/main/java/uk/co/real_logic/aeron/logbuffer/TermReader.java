@@ -18,6 +18,8 @@ package uk.co.real_logic.aeron.logbuffer;
 import uk.co.real_logic.agrona.BitUtil;
 import uk.co.real_logic.agrona.concurrent.UnsafeBuffer;
 
+import java.util.function.Consumer;
+
 import static uk.co.real_logic.aeron.logbuffer.FrameDescriptor.*;
 import static uk.co.real_logic.aeron.protocol.DataHeaderFlyweight.HEADER_LENGTH;
 
@@ -28,85 +30,94 @@ import static uk.co.real_logic.aeron.protocol.DataHeaderFlyweight.HEADER_LENGTH;
  */
 public class TermReader
 {
-    private final UnsafeBuffer termBuffer;
-    private final Header header;
-    private int offset = 0;
-
     /**
-     * Construct a reader for a log and associated meta data buffer.
+     * Reads data from a term in a log buffer.
      *
-     * @param initialTermId at which this stream started.
-     * @param termBuffer    containing the data frames.
+     * If a fragmentsLimit of 0 or less is passed then at least one read will be attempted.
+     *
+     * @param termBuffer     to be read for fragments.
+     * @param termOffset     offset within the buffer that the read should begin.
+     * @param handler        the handler for data that has been read
+     * @param fragmentsLimit limit the number of fragments read.
+     * @param header         to be used for mapping over the header for a given fragment.
+     * @param errorHandler   to be notified if an error occurs during the callback.
+     * @return the number of fragments read
      */
-    public TermReader(final int initialTermId, final UnsafeBuffer termBuffer)
+    public static long read(
+        final UnsafeBuffer termBuffer,
+        int termOffset,
+        final FragmentHandler handler,
+        final int fragmentsLimit,
+        final Header header,
+        final Consumer<Throwable> errorHandler)
     {
-        LogBufferDescriptor.checkTermBuffer(termBuffer);
-        termBuffer.verifyAlignment();
-
-        this.termBuffer = termBuffer;
-        header = new Header(initialTermId, termBuffer);
-    }
-
-    /**
-     * Get the term buffer that the reader reads.
-     *
-     * @return the term buffer that the reader reads.
-     */
-    public UnsafeBuffer termBuffer()
-    {
-        return termBuffer;
-    }
-
-    /**
-     * Return the read offset
-     *
-     * @return offset
-     */
-    public int offset()
-    {
-        return offset;
-    }
-
-    /**
-     * Reads data from the log buffer.
-     *
-     * If a framesCountLimit of 0 or less is passed then at least one read will be attempted.
-     *
-     * @param termOffset       offset within the buffer that the read should begin.
-     * @param handler          the handler for data that has been read
-     * @param framesCountLimit limit the number of frames read.
-     * @return the number of frames read
-     */
-    public int read(int termOffset, final FragmentHandler handler, final int framesCountLimit)
-    {
-        int framesCounter = 0;
-        final Header header = this.header;
-        final UnsafeBuffer termBuffer = this.termBuffer;
+        int fragmentsRead = 0;
         final int capacity = termBuffer.capacity();
-        offset = termOffset;
 
-        do
+        try
         {
-            final int frameLength = frameLengthVolatile(termBuffer, termOffset);
-            if (frameLength <= 0)
+            do
             {
-                break;
+                final int frameLength = frameLengthVolatile(termBuffer, termOffset);
+                if (frameLength <= 0)
+                {
+                    break;
+                }
+
+                final int fragmentOffset = termOffset;
+                termOffset += BitUtil.align(frameLength, FRAME_ALIGNMENT);
+
+                if (!isPaddingFrame(termBuffer, fragmentOffset))
+                {
+                    header.buffer(termBuffer);
+                    header.offset(fragmentOffset);
+
+                    handler.onFragment(termBuffer, fragmentOffset + HEADER_LENGTH, frameLength - HEADER_LENGTH, header);
+
+                    ++fragmentsRead;
+                }
             }
-
-            final int currentTermOffset = termOffset;
-            termOffset += BitUtil.align(frameLength, FRAME_ALIGNMENT);
-            offset = termOffset;
-
-            if (!isPaddingFrame(termBuffer, currentTermOffset))
-            {
-                header.offset(currentTermOffset);
-                handler.onFragment(termBuffer, currentTermOffset + HEADER_LENGTH, frameLength - HEADER_LENGTH, header);
-
-                ++framesCounter;
-            }
+            while (fragmentsRead < fragmentsLimit && termOffset < capacity);
         }
-        while (framesCounter < framesCountLimit && termOffset < capacity);
+        catch (final Exception ex)
+        {
+            errorHandler.accept(ex);
+        }
 
-        return framesCounter;
+        return readOutcome(termOffset, fragmentsRead);
+    }
+
+    /**
+     * Pack the values for fragmentsRead and offset into a long for returning on the stack.
+     *
+     * @param offset   value to be packed.
+     * @param fragmentsRead value to be packed.
+     * @return a long with both ints packed into it.
+     */
+    public static long readOutcome(final int offset, final int fragmentsRead)
+    {
+        return ((long)offset << 32) | fragmentsRead;
+    }
+
+    /**
+     * The number of fragments that have been read.
+     *
+     * @param readOutcome into which the fragments read value has been packed.
+     * @return the number of fragments that have been read.
+     */
+    public static int fragmentsRead(final long readOutcome)
+    {
+        return (int)readOutcome;
+    }
+
+    /**
+     * The offset up to which the term has progressed.
+     *
+     * @param readOutcome into which the offset value has been packed.
+     * @return the offset up to which the term has progressed.
+     */
+    public static int offset(final long readOutcome)
+    {
+        return (int)(readOutcome >>> 32);
     }
 }

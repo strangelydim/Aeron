@@ -21,6 +21,7 @@ import org.mockito.ArgumentCaptor;
 import uk.co.real_logic.aeron.logbuffer.FragmentHandler;
 import uk.co.real_logic.aeron.logbuffer.FrameDescriptor;
 import uk.co.real_logic.aeron.logbuffer.Header;
+import uk.co.real_logic.aeron.logbuffer.LogBufferDescriptor;
 import uk.co.real_logic.agrona.concurrent.UnsafeBuffer;
 
 import java.nio.ByteOrder;
@@ -33,15 +34,17 @@ import static org.mockito.Mockito.*;
 public class FragmentAssemblyAdapterTest
 {
     private static final int SESSION_ID = 777;
+    private static final int INITIAL_TERM_ID = 3;
 
     private final FragmentHandler delegateFragmentHandler = mock(FragmentHandler.class);
     private final UnsafeBuffer termBuffer = mock(UnsafeBuffer.class);
-    private final Header header = spy(new Header(termBuffer));
+    private final Header header = spy(new Header(INITIAL_TERM_ID, LogBufferDescriptor.TERM_MIN_LENGTH));
     private final FragmentAssemblyAdapter adapter = new FragmentAssemblyAdapter(delegateFragmentHandler);
 
     @Before
     public void setUp()
     {
+        header.buffer(termBuffer);
         when(termBuffer.getInt(anyInt(), any(ByteOrder.class))).thenReturn(SESSION_ID);
     }
 

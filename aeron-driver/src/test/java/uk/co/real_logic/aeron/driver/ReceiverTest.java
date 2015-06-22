@@ -18,7 +18,9 @@ package uk.co.real_logic.aeron.driver;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import uk.co.real_logic.aeron.driver.buffer.RawLogPartition;
 import uk.co.real_logic.aeron.logbuffer.FrameDescriptor;
+import uk.co.real_logic.aeron.logbuffer.Header;
 import uk.co.real_logic.aeron.logbuffer.TermReader;
 import uk.co.real_logic.aeron.driver.event.EventLogger;
 import uk.co.real_logic.aeron.protocol.DataHeaderFlyweight;
@@ -47,6 +49,7 @@ import java.nio.channels.DatagramChannel;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import static junit.framework.TestCase.assertTrue;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -86,6 +89,7 @@ public class ReceiverTest
     private final UnsafeBuffer dataBuffer = new UnsafeBuffer(dataFrameBuffer);
     private final ByteBuffer setupFrameBuffer = ByteBuffer.allocateDirect(SetupFlyweight.HEADER_LENGTH);
     private final UnsafeBuffer setupBuffer = new UnsafeBuffer(setupFrameBuffer);
+    private final Consumer<Throwable> mockErrorHandler = mock(Consumer.class);
 
     private final DataHeaderFlyweight dataHeader = new DataHeaderFlyweight();
     private final StatusMessageFlyweight statusHeader = new StatusMessageFlyweight();
@@ -99,7 +103,8 @@ public class ReceiverTest
     private final TimerWheel timerWheel = new TimerWheel(
         clock, Configuration.CONDUCTOR_TICK_DURATION_US, TimeUnit.MICROSECONDS, Configuration.CONDUCTOR_TICKS_PER_WHEEL);
 
-    private TermReader[] termReaders;
+    private final Header header = new Header(INITIAL_TERM_ID, TERM_BUFFER_LENGTH);
+    private UnsafeBuffer[] termBuffers;
     private DatagramChannel senderChannel;
 
     private InetSocketAddress senderAddress = new InetSocketAddress("localhost", 40123);
@@ -143,10 +148,10 @@ public class ReceiverTest
         senderChannel.bind(senderAddress);
         senderChannel.configureBlocking(false);
 
-        termReaders = rawLog
+        termBuffers = rawLog
             .stream()
-            .map((partition) -> new TermReader(INITIAL_TERM_ID, partition.termBuffer()))
-            .toArray(TermReader[]::new);
+            .map(RawLogPartition::termBuffer)
+            .toArray(UnsafeBuffer[]::new);
 
         receiveChannelEndpoint = new ReceiveChannelEndpoint(
             UdpChannel.parse(URI),
@@ -240,7 +245,7 @@ public class ReceiverTest
         fillSetupFrame(setupHeader);
         receiveChannelEndpoint.onSetupMessage(setupHeader, setupBuffer, setupHeader.frameLength(), senderAddress);
 
-        int messagesRead = toConductorQueue.drain(
+        final int commandsRead = toConductorQueue.drain(
             (e) ->
             {
                 assertTrue(e instanceof CreateConnectionCmd);
@@ -266,15 +271,16 @@ public class ReceiverTest
                         SOURCE_ADDRESS));
             });
 
-        assertThat(messagesRead, is(1));
+        assertThat(commandsRead, is(1));
 
         receiver.doWork();
 
         fillDataFrame(dataHeader, 0, FAKE_PAYLOAD);
         receiveChannelEndpoint.onDataPacket(dataHeader, dataBuffer, dataHeader.frameLength(), senderAddress);
 
-        messagesRead = termReaders[ACTIVE_INDEX].read(
-            termReaders[ACTIVE_INDEX].offset(),
+        final long readOutcome = TermReader.read(
+            termBuffers[ACTIVE_INDEX],
+            INITIAL_TERM_OFFSET,
             (buffer, offset, length, header) ->
             {
                 assertThat(header.type(), is(HeaderFlyweight.HDR_TYPE_DATA));
@@ -284,9 +290,11 @@ public class ReceiverTest
                 assertThat(header.termOffset(), is(0));
                 assertThat(header.frameLength(), is(DataHeaderFlyweight.HEADER_LENGTH + FAKE_PAYLOAD.length));
             },
-            Integer.MAX_VALUE);
+            Integer.MAX_VALUE,
+            header,
+            mockErrorHandler);
 
-        assertThat(messagesRead, is(1));
+        assertThat(TermReader.fragmentsRead(readOutcome), is(1));
     }
 
     @Test
@@ -300,7 +308,7 @@ public class ReceiverTest
         fillSetupFrame(setupHeader);
         receiveChannelEndpoint.onSetupMessage(setupHeader, setupBuffer, setupHeader.frameLength(), senderAddress);
 
-        int messagesRead = toConductorQueue.drain(
+        final int commandsRead = toConductorQueue.drain(
             (e) ->
             {
                 assertTrue(e instanceof CreateConnectionCmd);
@@ -326,7 +334,7 @@ public class ReceiverTest
                         SOURCE_ADDRESS));
             });
 
-        assertThat(messagesRead, is(1));
+        assertThat(commandsRead, is(1));
 
         receiver.doWork();
 
@@ -336,8 +344,9 @@ public class ReceiverTest
         fillDataFrame(dataHeader, 0, FAKE_PAYLOAD);  // heartbeat with same term offset
         receiveChannelEndpoint.onDataPacket(dataHeader, dataBuffer, dataHeader.frameLength(), senderAddress);
 
-        messagesRead = termReaders[ACTIVE_INDEX].read(
-            termReaders[ACTIVE_INDEX].offset(),
+        final long readOutcome = TermReader.read(
+            termBuffers[ACTIVE_INDEX],
+            INITIAL_TERM_OFFSET,
             (buffer, offset, length, header) ->
             {
                 assertThat(header.type(), is(HeaderFlyweight.HDR_TYPE_DATA));
@@ -347,9 +356,11 @@ public class ReceiverTest
                 assertThat(header.termOffset(), is(0));
                 assertThat(header.frameLength(), is(DataHeaderFlyweight.HEADER_LENGTH + FAKE_PAYLOAD.length));
             },
-            Integer.MAX_VALUE);
+            Integer.MAX_VALUE,
+            header,
+            mockErrorHandler);
 
-        assertThat(messagesRead, is(1));
+        assertThat(TermReader.fragmentsRead(readOutcome), is(1));
     }
 
     @Test
@@ -363,7 +374,7 @@ public class ReceiverTest
         fillSetupFrame(setupHeader);
         receiveChannelEndpoint.onSetupMessage(setupHeader, setupBuffer, setupHeader.frameLength(), senderAddress);
 
-        int messagesRead = toConductorQueue.drain(
+        final int commandsRead = toConductorQueue.drain(
             (e) ->
             {
                 assertTrue(e instanceof CreateConnectionCmd);
@@ -389,7 +400,7 @@ public class ReceiverTest
                         SOURCE_ADDRESS));
             });
 
-        assertThat(messagesRead, is(1));
+        assertThat(commandsRead, is(1));
 
         receiver.doWork();
 
@@ -399,8 +410,9 @@ public class ReceiverTest
         fillDataFrame(dataHeader, 0, FAKE_PAYLOAD);  // initial data frame
         receiveChannelEndpoint.onDataPacket(dataHeader, dataBuffer, dataHeader.frameLength(), senderAddress);
 
-        messagesRead = termReaders[ACTIVE_INDEX].read(
-            termReaders[ACTIVE_INDEX].offset(),
+        final long readOutcome = TermReader.read(
+            termBuffers[ACTIVE_INDEX],
+            INITIAL_TERM_OFFSET,
             (buffer, offset, length, header) ->
             {
                 assertThat(header.type(), is(HeaderFlyweight.HDR_TYPE_DATA));
@@ -410,9 +422,11 @@ public class ReceiverTest
                 assertThat(header.termOffset(), is(0));
                 assertThat(header.frameLength(), is(DataHeaderFlyweight.HEADER_LENGTH + FAKE_PAYLOAD.length));
             },
-            Integer.MAX_VALUE);
+            Integer.MAX_VALUE,
+            header,
+            mockErrorHandler);
 
-        assertThat(messagesRead, is(1));
+        assertThat(TermReader.fragmentsRead(readOutcome), is(1));
     }
 
     @Test
@@ -430,7 +444,7 @@ public class ReceiverTest
         fillSetupFrame(setupHeader, initialTermOffset);
         receiveChannelEndpoint.onSetupMessage(setupHeader, setupBuffer, setupHeader.frameLength(), senderAddress);
 
-        int messagesRead = toConductorQueue.drain(
+        final int commandsRead = toConductorQueue.drain(
             (e) ->
             {
                 assertTrue(e instanceof CreateConnectionCmd);
@@ -456,7 +470,7 @@ public class ReceiverTest
                         SOURCE_ADDRESS));
             });
 
-        assertThat(messagesRead, is(1));
+        assertThat(commandsRead, is(1));
 
         verify(mockHighestReceivedPosition).setOrdered(initialTermOffset);
 
@@ -467,7 +481,8 @@ public class ReceiverTest
 
         verify(mockHighestReceivedPosition).setOrdered(initialTermOffset + alignedDataFrameLength);
 
-        messagesRead = termReaders[ACTIVE_INDEX].read(
+        final long readOutcome = TermReader.read(
+            termBuffers[ACTIVE_INDEX],
             initialTermOffset,
             (buffer, offset, length, header) ->
             {
@@ -478,9 +493,11 @@ public class ReceiverTest
                 assertThat(header.termOffset(), is(initialTermOffset));
                 assertThat(header.frameLength(), is(DataHeaderFlyweight.HEADER_LENGTH + FAKE_PAYLOAD.length));
             },
-            Integer.MAX_VALUE);
+            Integer.MAX_VALUE,
+            header,
+            mockErrorHandler);
 
-        assertThat(messagesRead, is(1));
+        assertThat(TermReader.fragmentsRead(readOutcome), is(1));
     }
 
     private void fillDataFrame(final DataHeaderFlyweight header, final int termOffset, final byte[] payload)

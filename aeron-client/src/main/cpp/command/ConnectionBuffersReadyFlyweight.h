@@ -49,9 +49,9 @@ namespace aeron { namespace command {
 * |                          Log File Name                      ...
 * ...                                                             |
 * +---------------------------------------------------------------+
-* |                         source info Length                    |
+* |                     Source Identity Length                    |
 * +---------------------------------------------------------------+
-* |                         source info Name                    ...
+* |                      Source Identity Name                    ...
 * ...                                                             |
 * +---------------------------------------------------------------+
 * |                      Subscriber Position Id 0                 |
@@ -70,14 +70,8 @@ namespace aeron { namespace command {
 
 #pragma pack(push)
 #pragma pack(4)
-struct ConnectionReadyDefn
+struct ConnectionBuffersReadyDefn
 {
-    struct SubscriberPosition
-    {
-        std::int32_t indicatorId;
-        std::int64_t registrationId;
-    };
-
     std::int64_t correlationId;
     std::int64_t joiningPosition;
     std::int32_t sessionId;
@@ -88,16 +82,22 @@ struct ConnectionReadyDefn
         std::int32_t logFileLength;
         std::int8_t logFileData[1];
     } logFile;
+
+    struct SubscriberPosition
+    {
+        std::int32_t indicatorId;
+        std::int64_t registrationId;
+    };
 };
 #pragma pack(pop)
 
-class ConnectionReadyFlyweight : public Flyweight<ConnectionReadyDefn>
+class ConnectionBuffersReadyFlyweight : public Flyweight<ConnectionBuffersReadyDefn>
 {
 public:
-    typedef ConnectionReadyFlyweight this_t;
+    typedef ConnectionBuffersReadyFlyweight this_t;
 
-    inline ConnectionReadyFlyweight (concurrent::AtomicBuffer& buffer, util::index_t offset)
-        : Flyweight<ConnectionReadyDefn>(buffer, offset)
+    inline ConnectionBuffersReadyFlyweight(concurrent::AtomicBuffer& buffer, util::index_t offset)
+        : Flyweight<ConnectionBuffersReadyDefn>(buffer, offset)
     {
     }
 
@@ -158,35 +158,40 @@ public:
 
     inline std::string logFileName() const
     {
-        return stringGet(offsetof(ConnectionReadyDefn, logFile));
+        return stringGet(offsetof(ConnectionBuffersReadyDefn, logFile));
     }
 
     inline this_t& logFileName(const std::string& value)
     {
-        stringPut(offsetof(ConnectionReadyDefn, logFile), value);
+        stringPut(offsetof(ConnectionBuffersReadyDefn, logFile), value);
         return *this;
     }
 
-    inline std::string sourceInfo() const
+    inline std::string sourceIdentity() const
     {
-        return stringGet(sourceInfoOffset());
+        return stringGet(sourceIdentityOffset());
     }
 
-    inline this_t& sourceInfo(const std::string& value)
+    inline this_t& sourceIdentity(const std::string &value)
     {
-        stringPut(sourceInfoOffset(), value);
+        stringPut(sourceIdentityOffset(), value);
         return *this;
     }
 
-    inline this_t& subscriberPosition(std::int32_t index, const ConnectionReadyDefn::SubscriberPosition& value)
+    inline this_t& subscriberPosition(std::int32_t index, const ConnectionBuffersReadyDefn::SubscriberPosition& value)
     {
-        overlayStruct<ConnectionReadyDefn::SubscriberPosition>(subscriberPositionOffset(index)) = value;
+        overlayStruct<ConnectionBuffersReadyDefn::SubscriberPosition>(subscriberPositionOffset(index)) = value;
         return *this;
     }
 
-    inline const ConnectionReadyDefn::SubscriberPosition subscriberPosition(std::int32_t index)
+    inline const ConnectionBuffersReadyDefn::SubscriberPosition subscriberPosition(std::int32_t index) const
     {
-        return overlayStruct<ConnectionReadyDefn::SubscriberPosition>(subscriberPositionOffset(index));
+        return overlayStruct<ConnectionBuffersReadyDefn::SubscriberPosition>(subscriberPositionOffset(index));
+    }
+
+    inline const ConnectionBuffersReadyDefn::SubscriberPosition* subscriberPositions() const
+    {
+        return &overlayStruct<ConnectionBuffersReadyDefn::SubscriberPosition>(subscriberPositionOffset(0));
     }
 
     inline std::int32_t length()
@@ -196,17 +201,17 @@ public:
 
 private:
 
-    inline util::index_t sourceInfoOffset() const
+    inline util::index_t sourceIdentityOffset() const
     {
-        return offsetof(ConnectionReadyDefn, logFile.logFileData) + m_struct.logFile.logFileLength;
+        return offsetof(ConnectionBuffersReadyDefn, logFile.logFileData) + m_struct.logFile.logFileLength;
     }
 
     inline util::index_t subscriberPositionOffset(int index) const
     {
-        const util::index_t offset = sourceInfoOffset();
+        const util::index_t offset = sourceIdentityOffset();
         const util::index_t startOfPositions = offset + stringGetLength(offset) + (util::index_t)sizeof(std::int32_t);
 
-        return startOfPositions + (index * (util::index_t)sizeof(ConnectionReadyDefn::SubscriberPosition));
+        return startOfPositions + (index * (util::index_t)sizeof(ConnectionBuffersReadyDefn::SubscriberPosition));
     }
 };
 

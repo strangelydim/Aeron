@@ -25,7 +25,7 @@ Publication::Publication(
     std::int64_t registrationId,
     std::int32_t streamId,
     std::int32_t sessionId,
-    ReadablePosition<UnsafeBufferPosition>& publicationLimit,
+    UnsafeBufferPosition& publicationLimit,
     LogBuffers &buffers)
     :
     m_conductor(conductor),
@@ -37,7 +37,7 @@ Publication::Publication(
     m_logMetaDataBuffer(buffers.atomicBuffer(LogBufferDescriptor::LOG_META_DATA_SECTION_INDEX))
 {
     const std::int32_t mtuLength = LogBufferDescriptor::mtuLength(m_logMetaDataBuffer);
-    std::int32_t capacity = buffers.atomicBuffer(0).getCapacity();
+    std::int32_t capacity = buffers.atomicBuffer(0).capacity();
 
     for (int i = 0; i < LogBufferDescriptor::PARTITION_COUNT; i++)
     {
@@ -52,7 +52,7 @@ Publication::Publication(
             buffers.atomicBuffer(i),
             buffers.atomicBuffer(i + LogBufferDescriptor::PARTITION_COUNT),
             defaultFrameHeader,
-            DataHeader::LENGTH,
+            DataFrameHeader::LENGTH,
             mtuLength));
     }
 

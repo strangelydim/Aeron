@@ -41,23 +41,33 @@ public abstract class UdpChannelTransport implements AutoCloseable
     private final UdpChannel udpChannel;
     private final LossGenerator lossGenerator;
     private final EventLogger logger;
-    private final DatagramChannel datagramChannel;
     private final ByteBuffer receiveByteBuffer = ByteBuffer.allocateDirect(Configuration.RECEIVE_BYTE_BUFFER_LENGTH);
     private final UnsafeBuffer receiveBuffer = new UnsafeBuffer(receiveByteBuffer);
+    private DatagramChannel datagramChannel;
     private SelectionKey selectionKey;
     private TransportPoller transportPoller;
+    private InetSocketAddress bindSocketAddress;
+    private InetSocketAddress endPointSocketAddress;
 
     public UdpChannelTransport(
         final UdpChannel udpChannel,
         final InetSocketAddress endPointSocketAddress,
-        final InetSocketAddress bindAddress,
+        final InetSocketAddress bindSocketAddress,
         final LossGenerator lossGenerator,
         final EventLogger logger)
     {
         this.udpChannel = udpChannel;
         this.lossGenerator = lossGenerator;
         this.logger = logger;
+        this.endPointSocketAddress = endPointSocketAddress;
+        this.bindSocketAddress = bindSocketAddress;
+    }
 
+    /**
+     * Create the underlying channel for reading and writing.
+     */
+    public void openDatagramChannel()
+    {
         try
         {
             datagramChannel = DatagramChannel.open(udpChannel.protocolFamily());
@@ -72,39 +82,25 @@ public abstract class UdpChannelTransport implements AutoCloseable
             }
             else
             {
-                datagramChannel.bind(bindAddress);
+                datagramChannel.bind(bindSocketAddress);
             }
 
             if (0 != Configuration.SOCKET_SNDBUF_LENGTH)
             {
                 datagramChannel.setOption(StandardSocketOptions.SO_SNDBUF, Configuration.SOCKET_SNDBUF_LENGTH);
-                final int soSndbuf = datagramChannel.getOption(StandardSocketOptions.SO_SNDBUF);
-
-                if (soSndbuf != Configuration.SOCKET_SNDBUF_LENGTH)
-                {
-                    throw new IllegalStateException(String.format(
-                        "Failed to set SO_SNDBUF: attempted=%d, actual=%d", Configuration.SOCKET_SNDBUF_LENGTH, soSndbuf));
-                }
             }
 
             if (0 != Configuration.SOCKET_RCVBUF_LENGTH)
             {
                 datagramChannel.setOption(StandardSocketOptions.SO_RCVBUF, Configuration.SOCKET_RCVBUF_LENGTH);
-                final int soRcvbuf = datagramChannel.getOption(StandardSocketOptions.SO_RCVBUF);
-
-                if (soRcvbuf != Configuration.SOCKET_RCVBUF_LENGTH)
-                {
-                    throw new IllegalStateException(String.format(
-                        "Failed to set SO_RCVBUF: attempted=%d, actual=%d", Configuration.SOCKET_RCVBUF_LENGTH, soRcvbuf));
-                }
             }
 
             datagramChannel.configureBlocking(false);
         }
         catch (final IOException ex)
         {
-            throw new RuntimeException(
-                String.format("channel \"%s\" : %s", udpChannel.originalUriString(), ex.toString()), ex);
+            throw new RuntimeException(String.format(
+                "channel \"%s\" : %s", udpChannel.originalUriString(), ex.toString()), ex);
         }
     }
 

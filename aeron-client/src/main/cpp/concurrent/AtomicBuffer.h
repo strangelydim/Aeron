@@ -45,6 +45,23 @@ public:
     {
     }
 
+    AtomicBuffer(const AtomicBuffer& buffer) :
+        m_buffer(buffer.m_buffer), m_length(buffer.m_length)
+    {
+    }
+
+    AtomicBuffer(AtomicBuffer&& buffer) :
+        m_buffer(buffer.m_buffer), m_length(buffer.m_length)
+    {
+    }
+
+    AtomicBuffer& operator=(AtomicBuffer& buffer)
+    {
+        m_buffer = buffer.m_buffer;
+        m_length = buffer.m_length;
+        return *this;
+    }
+
     virtual ~AtomicBuffer()
     {
         // this class does not own the memory. It simply overlays it.
@@ -60,6 +77,28 @@ public:
     {
         m_buffer = buffer.m_buffer;
         m_length = buffer.m_length;
+    }
+
+    inline util::index_t capacity() const
+    {
+        return m_length;
+    }
+
+    inline void capacity(util::index_t length)
+    {
+        m_length = length;
+    }
+
+    inline std::uint8_t *buffer() const
+    {
+        return m_buffer;
+    }
+
+    template <typename struct_t>
+    struct_t& overlayStruct()
+    {
+        boundsCheck(0, sizeof(struct_t));
+        return *reinterpret_cast<struct_t*>(m_buffer);
     }
 
     template <typename struct_t>
@@ -266,25 +305,6 @@ public:
         return length;
     }
 
-    inline util::index_t getCapacity() const
-    {
-        return m_length;
-    }
-
-    inline void setCapacity(util::index_t length)
-    {
-        m_length = length;
-    }
-
-    inline std::uint8_t * getBuffer() const
-    {
-        return m_buffer;
-    }
-
-    inline void setBuffer(std::uint8_t *buffer)
-    {
-        m_buffer = buffer;
-    }
 private:
     std::uint8_t *m_buffer;
     util::index_t m_length;

@@ -18,6 +18,7 @@ package uk.co.real_logic.aeron;
 import uk.co.real_logic.aeron.logbuffer.FragmentHandler;
 
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+import java.util.function.Consumer;
 
 /**
  * Aeron Subscriber API for receiving messages from publishers on a given channel and streamId pair.
@@ -50,14 +51,21 @@ public class Subscription implements AutoCloseable
 
     private final String channel;
     private final ClientConductor clientConductor;
+    private final Consumer<Throwable> errorHandler;
     private volatile Connection[] connections = EMPTY_ARRAY;
 
-    Subscription(final ClientConductor conductor, final String channel, final int streamId, final long registrationId)
+    Subscription(
+        final ClientConductor conductor,
+        final String channel,
+        final int streamId,
+        final long registrationId,
+        final Consumer<Throwable> errorHandler)
     {
         this.clientConductor = conductor;
         this.channel = channel;
         this.streamId = streamId;
         this.registrationId = registrationId;
+        this.errorHandler = errorHandler;
     }
 
     /**
@@ -84,12 +92,12 @@ public class Subscription implements AutoCloseable
      * Each fragment read will be a whole message if it is under MTU length. If larger than MTU then it will come
      * as a series of fragments ordered withing a session.
      *
-     * @param fragmentHandler    callback for handling each message fragment as it is read.
-     * @param fragmentCountLimit number of message fragments to limit for a single poll operation.
+     * @param fragmentHandler callback for handling each message fragment as it is read.
+     * @param fragmentLimit   number of message fragments to limit for a single poll operation.
      * @return the number of fragments received
      * @throws IllegalStateException if the subscription is closed.
      */
-    public int poll(final FragmentHandler fragmentHandler, final int fragmentCountLimit)
+    public int poll(final FragmentHandler fragmentHandler, final int fragmentLimit)
     {
         ensureOpen();
 
@@ -106,17 +114,18 @@ public class Subscription implements AutoCloseable
             }
 
             int i = startingIndex;
+            final Consumer<Throwable> errorHandler = this.errorHandler;
 
             do
             {
-                fragmentsRead += connections[i].poll(fragmentHandler, fragmentCountLimit);
+                fragmentsRead += connections[i].poll(fragmentHandler, fragmentLimit, errorHandler);
 
                 if (++i == length)
                 {
                     i = 0;
                 }
             }
-            while (i != startingIndex);
+            while (fragmentsRead < fragmentLimit && i != startingIndex);
         }
 
         return fragmentsRead;
