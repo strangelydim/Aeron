@@ -34,6 +34,7 @@ import uk.co.real_logic.aeron.driver.cmd.DriverConductorCmd;
 import uk.co.real_logic.aeron.driver.media.ReceiveChannelEndpoint;
 import uk.co.real_logic.aeron.driver.media.TransportPoller;
 import uk.co.real_logic.aeron.driver.media.UdpChannel;
+import uk.co.real_logic.agrona.ErrorHandler;
 import uk.co.real_logic.agrona.TimerWheel;
 import uk.co.real_logic.agrona.concurrent.AtomicCounter;
 import uk.co.real_logic.agrona.concurrent.NanoClock;
@@ -49,8 +50,8 @@ import java.nio.channels.DatagramChannel;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
 
+import static java.lang.Integer.numberOfTrailingZeros;
 import static junit.framework.TestCase.assertTrue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
@@ -89,7 +90,8 @@ public class ReceiverTest
     private final UnsafeBuffer dataBuffer = new UnsafeBuffer(dataFrameBuffer);
     private final ByteBuffer setupFrameBuffer = ByteBuffer.allocateDirect(SetupFlyweight.HEADER_LENGTH);
     private final UnsafeBuffer setupBuffer = new UnsafeBuffer(setupFrameBuffer);
-    private final Consumer<Throwable> mockErrorHandler = mock(Consumer.class);
+
+    private final ErrorHandler mockErrorHandler = mock(ErrorHandler.class);
 
     private final DataHeaderFlyweight dataHeader = new DataHeaderFlyweight();
     private final StatusMessageFlyweight statusHeader = new StatusMessageFlyweight();
@@ -120,7 +122,7 @@ public class ReceiverTest
     public void setUp() throws Exception
     {
         when(POSITION.getVolatile())
-            .thenReturn(computePosition(ACTIVE_TERM_ID, 0, Integer.numberOfTrailingZeros(TERM_BUFFER_LENGTH), ACTIVE_TERM_ID));
+            .thenReturn(computePosition(ACTIVE_TERM_ID, 0, numberOfTrailingZeros(TERM_BUFFER_LENGTH), ACTIVE_TERM_ID));
         when(mockSystemCounters.statusMessagesSent()).thenReturn(mock(AtomicCounter.class));
         when(mockSystemCounters.flowControlUnderRuns()).thenReturn(mock(AtomicCounter.class));
         when(mockSystemCounters.bytesReceived()).thenReturn(mock(AtomicCounter.class));
